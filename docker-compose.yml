@@ -1,7 +1,7 @@
 networks:
-  monitoring-net:
+  loki-net:
     external: true
-    name: monitoring-net
+    name: loki-net
 
 services:
   alloy:
@@ -16,7 +16,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy_data:/var/lib/alloy/data
     networks:
-      - monitoring-net
+      - loki-net
     extends:
       file: docker-compose.base.yml
       service: base
