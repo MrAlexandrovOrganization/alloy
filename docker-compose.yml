@@ -1,0 +1,31 @@
+networks:
+  monitoring-net:
+    external: true
+    name: monitoring-net
+
+services:
+  alloy:
+    image: grafana/alloy:v1.7.1
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    networks:
+      - monitoring-net
+    extends:
+      file: docker-compose.base.yml
+      service: base
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 384m
+
+volumes:
+  alloy_data:
+    name: observability_alloy_data

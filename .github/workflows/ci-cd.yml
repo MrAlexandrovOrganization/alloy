@@ -1,0 +1,59 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate configs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose
+        run: docker compose config -q
+      - name: Validate Alloy config
+        run: |
+          docker run --rm \
+            -v "$PWD/config.alloy:/work/config.alloy:ro" \
+            grafana/alloy:v1.7.1 \
+            fmt /work/config.alloy > /tmp/config.formatted.alloy
+          diff -u config.alloy /tmp/config.formatted.alloy
+
+  deploy:
+    name: Deploy to VM
+    runs-on: ubuntu-24.04
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd ${{ secrets.VM_PROJECT_PATH }}
+            git pull
+            make up
+
+      - name: Smoke test Alloy and ingestion
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            if [ "$(docker ps --filter 'name=alloy' --filter 'status=running' -q)" = "" ]; then
+              echo "Alloy container is not running."; exit 1
+            fi
+            echo "Alloy is running"
+            sleep 15
+            RESPONSE=$(curl -fsS -G http://127.0.0.1:3100/loki/api/v1/query \
+              --data-urlencode 'query={job="docker"}')
+            if echo "$RESPONSE" | grep -q '"result":\[\]'; then
+              echo "No logs ingested into Loki"; exit 1
+            fi
+            echo "Loki is ingesting docker logs"
