@@ -27,9 +27,60 @@ loki.relabel "docker" {
 loki.source.docker "containers" {
 	host          = "unix:///var/run/docker.sock"
 	targets       = discovery.docker.host.targets
-	forward_to    = [loki.write.loki.receiver]
+	forward_to    = [loki.process.docker.receiver]
 	relabel_rules = loki.relabel.docker.rules
 	labels        = {job = "docker"}
+}
+
+loki.process "docker" {
+	forward_to = [loki.write.loki.receiver]
+
+	stage.decolorize {}
+
+	stage.drop {
+		older_than = "1h"
+	}
+
+	stage.match {
+		selector = `{container=~".+"} |~ "^\\s*\\{"`
+
+		stage.json {
+			expressions = {
+				timestamp      = "timestamp",
+				observed_time  = "observed_timestamp",
+				severity_text  = "severity_text",
+				severity_level = "level",
+				trace_id       = "trace_id",
+				span_id        = "span_id",
+			}
+		}
+	}
+
+	stage.match {
+		selector = `{container=~"(loki-loki-1|grafana-grafana-1|prometheus-prometheus-1)"} |~ "^(level=|ts=|logger=)"`
+
+		stage.logfmt {
+			mapping = {
+				logfmt_timestamp = "ts",
+				logfmt_level     = "level",
+				logfmt_trace_id  = "trace_id",
+				logfmt_span_id   = "span_id",
+			}
+		}
+	}
+
+	stage.labels {
+		values = {
+			level = "severity_text",
+		}
+	}
+
+	stage.structured_metadata {
+		values = {
+			trace_id = "trace_id",
+			span_id  = "span_id",
+		}
+	}
 }
 
 loki.write "loki" {
