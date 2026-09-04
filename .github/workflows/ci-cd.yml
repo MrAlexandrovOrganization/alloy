@@ -14,13 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate docker-compose
         run: docker compose config -q
-      - name: Validate Alloy config
-        run: |
-          docker run --rm \
-            -v "$PWD/config.alloy:/work/config.alloy:ro" \
-            grafana/alloy:v1.7.1 \
-            fmt /work/config.alloy > /tmp/config.formatted.alloy
-          diff -u config.alloy /tmp/config.formatted.alloy
+      - name: Check Alloy formatting
+        run: make fmt-check
 
   deploy:
     name: Deploy to VM

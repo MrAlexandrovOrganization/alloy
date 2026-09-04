@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+if ! git diff --cached --name-only --diff-filter=ACMR -- config.alloy | grep -qx 'config.alloy'; then
+	exit 0
+fi
+
+staged=$(mktemp -d)
+trap 'rm -rf "$staged"' EXIT HUP INT TERM
+git show :config.alloy > "$staged/config.alloy"
+
+if ! make fmt-check CONFIG="$staged/config.alloy"; then
+	echo "Alloy formatting check failed. Ensure Docker is running, then run:" >&2
+	echo "  make fmt" >&2
+	echo "  git add config.alloy" >&2
+	echo "Review staged changes before retrying the commit (especially when partially staging)." >&2
+	exit 1
+fi

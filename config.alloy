@@ -35,7 +35,7 @@ loki.source.docker "containers" {
 loki.process "docker" {
 	forward_to = [loki.write.loki.receiver]
 
-	stage.decolorize {}
+	stage.decolorize { }
 
 	stage.drop {
 		older_than = "1h"
