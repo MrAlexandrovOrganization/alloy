@@ -1,5 +1,40 @@
 # Alloy
 
+## Log Levels
+
+The Docker pipeline sets both the indexed `level` label and the
+`detected_level` structured metadata to the same normalized severity. Explicit
+metadata prevents Loki's independent severity inference from disagreeing with
+stream selectors. Severity normalization does not rewrite source log bodies;
+the existing ANSI decolorization still applies.
+
+Severity is read in order from JSON `severity_text`, JSON `level`, or logfmt
+`level`. Logfmt parsing applies to all containers whose lines start with a
+key-value pair, including Go slog's `time=... level=...` output.
+
+Canonical values are `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and
+`unknown`. Values are lowercased and trimmed. Aliases are mapped as follows:
+
+| Input | Canonical level |
+| --- | --- |
+| `warning` | `warn` |
+| `err` | `error` |
+| `notice`, `information`, `informational` | `info` |
+| `critical`, `crit`, `panic`, `emerg`, `emergency`, `alert` | `fatal` |
+
+Missing or unsupported levels (including unstructured text) become `unknown`,
+not `info`. Severity words inside message text are not used to guess a level.
+Numeric severity fields are not interpreted.
+
+Use lowercase selectors such as `{job="docker", level="error"}`. For volume
+queries, group by `level` or `detected_level`, not a reparsed raw JSON field.
+With `| json`, a body field named `level` can appear as `level_extracted`;
+it remains the original application value, not the normalized label.
+
+Only newly ingested logs use these rules. Historical labels and metadata are
+not rewritten, so time ranges spanning deployment can still show mixed values.
+This normalizes severity, not the applications' different JSON message schemas.
+
 ## Checks and Formatting
 
 Formatting requires Docker Compose and a running Docker daemon. The Alloy image

@@ -57,7 +57,7 @@ loki.process "docker" {
 	}
 
 	stage.match {
-		selector = `{container=~"(loki-loki-1|grafana-grafana-1|prometheus-prometheus-1)"} |~ "^(level=|ts=|logger=)"`
+		selector = `{container=~".+"} |~ "^\\s*[A-Za-z_][A-Za-z0-9_.-]*="`
 
 		stage.logfmt {
 			mapping = {
@@ -69,16 +69,30 @@ loki.process "docker" {
 		}
 	}
 
+	// Prefer explicit JSON severity, then legacy JSON and logfmt levels.
+	stage.template {
+		source   = "normalized_level"
+		template = `{{ if .severity_text }}{{ ToLower (TrimSpace .severity_text) }}{{ else if .severity_level }}{{ ToLower (TrimSpace .severity_level) }}{{ else if .logfmt_level }}{{ ToLower (TrimSpace .logfmt_level) }}{{ else }}unknown{{ end }}`
+	}
+
+	// Bound label cardinality and reconcile Python/syslog severity aliases.
+	stage.template {
+		source   = "normalized_level"
+		template = `{{ if eq .Value "warning" }}warn{{ else if or (eq .Value "critical") (eq .Value "crit") (eq .Value "panic") (eq .Value "emerg") (eq .Value "emergency") (eq .Value "alert") }}fatal{{ else if eq .Value "err" }}error{{ else if or (eq .Value "notice") (eq .Value "information") (eq .Value "informational") }}info{{ else if or (eq .Value "trace") (eq .Value "debug") (eq .Value "info") (eq .Value "warn") (eq .Value "error") (eq .Value "fatal") }}{{ .Value }}{{ else }}unknown{{ end }}`
+	}
+
 	stage.labels {
 		values = {
-			level = "severity_text",
+			level = "normalized_level",
 		}
 	}
 
 	stage.structured_metadata {
 		values = {
-			trace_id = "trace_id",
-			span_id  = "span_id",
+			// Use the same severity for Loki detection and stream selectors.
+			detected_level = "normalized_level",
+			trace_id       = "trace_id",
+			span_id        = "span_id",
 		}
 	}
 }
