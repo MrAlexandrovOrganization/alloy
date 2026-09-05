@@ -12,10 +12,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Validate docker-compose
-        run: docker compose config -q
-      - name: Check Alloy formatting
-        run: make fmt-check
+      - name: Check formatting and configuration
+        run: make check
 
   deploy:
     name: Deploy to VM

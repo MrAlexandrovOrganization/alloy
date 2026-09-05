@@ -1,6 +1,6 @@
 # Alloy
 
-## Formatting
+## Checks and Formatting
 
 Formatting requires Docker Compose and a running Docker daemon. The Alloy image
 is pinned only in `docker-compose.yml`. Formatting commands resolve it with
@@ -10,15 +10,57 @@ same image. To upgrade Alloy, change `services.alloy.image` in that file.
 ```sh
 make fmt           # Format config.alloy in place
 make fmt-check     # Check without modifying config.alloy
+make config-check  # Validate Docker Compose configuration (read-only)
+make check         # All read-only checks; also used by CI
 make install-hooks # Install the pre-commit hook once per clone
 ```
 
-The hook checks the staged version of `config.alloy` only when it is added or
-modified. It does not modify files or stage changes. On failure, run `make fmt`,
-review and stage the desired changes, then retry the commit. When partially
-staging a file, use `git add -p config.alloy` to avoid staging unrelated edits.
+Both formatting commands pass the configuration to Docker through stdin and
+capture output in a local temporary file, without bind-mounting temporary paths
+(including on Colima). `fmt` only overwrites the source after the formatter
+succeeds. A Docker or syntax error leaves the source unchanged. `CONFIG=path`
+can select another file for manual formatting. Alloy v1.7.1 has no standalone
+`validate` command: `fmt-check` checks Alloy syntax and formatting, while
+`config-check` validates Compose, not Alloy component semantics. No services
+are started by `make check`.
 
-Installation refuses to overwrite an existing pre-commit hook; integrate
-`.githooks/pre-commit` into that hook manually if needed. After changing the
-tracked hook, update the installed copy as well. CI always runs `make fmt-check`,
-including when a local hook was not installed or was bypassed.
+## Commit Hook
+
+Install the pre-commit framework separately from the project/runtime dependencies:
+
+```sh
+uv tool install pre-commit
+make install-hooks
+```
+
+The executable must be on PATH, or supply a command override, for example
+`make install-hooks PRE_COMMIT=/path/to/pre-commit`. Docker must be running
+when committing Alloy changes. CI uses `make check` directly and does not
+require the framework.
+
+The local hook in `.pre-commit-config.yaml` autoformats only staged
+`config.alloy` changes. Pre-commit temporarily hides unstaged edits, runs the
+formatter, then restores them. Fixes change the working tree, never automatically
+stage changes, and fail that attempt so you can review, stage the desired fixes,
+and retry. For partial staging, use `git add -p config.alloy`, not an unconditional
+`git add`: if fixes conflict with unstaged edits, pre-commit rolls back the fixes
+and restores those edits. Resolve/review the formatting and staging before retrying.
+Unrelated files and deletions do not invoke the formatter.
+
+Installation refuses any configured `core.hooksPath` (including inherited or
+empty values) and any existing hook, including an existing framework hook or
+`pre-commit.legacy` that the framework would otherwise silently execute.
+Inspect unknown hooks/configuration manually; the installer never changes Git
+configuration or silently chains hooks.
+
+For clones with the original custom Alloy hook, explicitly run:
+
+```sh
+make migrate-hooks
+```
+
+Migration accepts only the exact known original hook content, rejects symlinks
+and existing backups, and preserves the old hook as
+`.git/hooks/pre-commit.alloy-legacy` (not executed by the framework). If installation
+fails, the original hook is restored. `.githooks/pre-commit` is retained unchanged
+as a legacy reference, not the active hook definition. No migration is automatic.

@@ -1,5 +1,6 @@
-DOCKER_COMPOSE = docker compose
+DOCKER_COMPOSE ?= docker compose
 DOCKER ?= docker
+PRE_COMMIT ?= pre-commit
 NET = loki-net
 CONFIG ?= config.alloy
 
@@ -24,30 +25,31 @@ down:
 logs:
 	$(DOCKER_COMPOSE) logs -f
 
-fmt:
-	@set -eu; \
-	image=$$($(DOCKER_COMPOSE) config --images alloy); \
-	$(DOCKER) run --rm \
-		-v "$(abspath $(CONFIG)):/work/config.alloy" \
-		"$$image" fmt --write /work/config.alloy
-
-fmt-check:
+fmt fmt-check:
 	@set -eu; \
 	image=$$($(DOCKER_COMPOSE) config --images alloy); \
 	formatted=$$(mktemp); \
-	trap 'rm -f "$$formatted"' EXIT HUP INT TERM; \
+	trap 'rm -f "$$formatted"' EXIT; \
+	trap 'exit 1' HUP INT TERM; \
 	$(DOCKER) run --rm -i "$$image" fmt - \
 		< "$(CONFIG)" > "$$formatted"; \
-	diff -u "$(CONFIG)" "$$formatted"
+	if [ "$@" = fmt ]; then \
+		if ! cmp -s "$(CONFIG)" "$$formatted"; then \
+			cat "$$formatted" > "$(CONFIG)"; \
+		fi; \
+	else \
+		diff -u "$(CONFIG)" "$$formatted"; \
+	fi
+
+config-check:
+	$(DOCKER_COMPOSE) config -q
+
+check: fmt-check config-check
 
 install-hooks:
-	@set -eu; \
-	hooks=$$(git rev-parse --git-path hooks); \
-	if [ -e "$$hooks/pre-commit" ] || [ -L "$$hooks/pre-commit" ]; then \
-		echo "A pre-commit hook already exists; refusing to overwrite it." >&2; \
-		exit 1; \
-	fi; \
-	mkdir -p "$$hooks"; \
-	install -m 755 .githooks/pre-commit "$$hooks/pre-commit"
+	@sh scripts/install-hooks.sh install
 
-.PHONY: up down logs init network fmt fmt-check install-hooks
+migrate-hooks:
+	@sh scripts/install-hooks.sh migrate
+
+.PHONY: up down logs init network fmt fmt-check config-check check install-hooks migrate-hooks

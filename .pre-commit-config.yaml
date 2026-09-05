@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: alloy-fmt
+        name: Format Alloy
+        entry: make fmt CONFIG=config.alloy
+        language: system
+        files: ^config\.alloy$
+        pass_filenames: false
