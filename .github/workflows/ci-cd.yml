@@ -30,7 +30,9 @@ jobs:
           script: |
             cd ${{ secrets.VM_PROJECT_PATH }}
             git pull
-            make up
+            make init
+            # Recreate to reload config and refresh the single-file bind mount after git pull.
+            docker compose up -d --force-recreate alloy
 
       - name: Smoke test Alloy and ingestion
         uses: appleboy/ssh-action@v1
