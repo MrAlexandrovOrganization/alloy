@@ -70,6 +70,55 @@ loki.process "docker" {
 	}
 
 	stage.match {
+		selector = `{container="loki-loki-1"} |~ "^level="`
+
+		stage.logfmt {
+			mapping = {
+				loki_caller     = "caller",
+				loki_message    = "msg",
+				loki_status     = "status",
+				loki_latency    = "latency",
+				loki_query_type = "query_type",
+				loki_found      = "found",
+			}
+		}
+
+		stage.regex {
+			source     = "loki_caller"
+			expression = `^(?P<loki_caller_file>metrics\.go|table_manager\.go|index_set\.go):[0-9]+$`
+		}
+
+		stage.regex {
+			source     = "loki_message"
+			expression = `^(?P<routine_index_operation>cleaning up unwanted indexes from table index_[0-9]+|uploading table index_[0-9]+|finished uploading table index_[0-9]+)$`
+		}
+
+		// Keep slow/failed queries and unexpected index operations visible.
+		stage.template {
+			source   = "logfmt_level"
+			template = `{{ if and (eq .Value "info") (or (and (eq .loki_caller_file "metrics.go") (eq .loki_query_type "stats") (eq .loki_status "200") (eq .loki_latency "fast")) (and (eq .loki_caller_file "table_manager.go") (eq .loki_message "get or create table") (eq .loki_found "true")) (and (eq .loki_caller_file "index_set.go") .routine_index_operation)) }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+	}
+
+	stage.match {
+		selector = `{container="stash-postgres-1"}`
+
+		stage.regex {
+			expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+ [A-Za-z0-9_+:/-]+ \[[0-9]+\] (?P<text_level>DEBUG[1-5]?|INFO|NOTICE|LOG|WARNING|ERROR|FATAL|PANIC):\s+(?P<postgres_message>.*)$`
+		}
+
+		stage.regex {
+			source     = "postgres_message"
+			expression = `^(?P<routine_checkpoint>checkpoint starting: time|checkpoint complete: wrote [0-9]+ buffers .*total=[0-9.]+ s; .*)$`
+		}
+
+		stage.template {
+			source   = "text_level"
+			template = `{{ if eq .Value "LOG" }}{{ if .routine_checkpoint }}debug{{ else }}info{{ end }}{{ else if or (eq .Value "DEBUG1") (eq .Value "DEBUG2") (eq .Value "DEBUG3") (eq .Value "DEBUG4") (eq .Value "DEBUG5") }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+	}
+
+	stage.match {
 		selector = `{container="egress-router"}`
 
 		stage.regex {
@@ -78,7 +127,7 @@ loki.process "docker" {
 
 		stage.regex {
 			source     = "singbox_message"
-			expression = `^(\[[0-9]+ [^]]+\] )?(?P<routine_connection>(outbound/[^ ]+: outbound connection to|inbound/[^ ]+: inbound connection from) [^ ]+)$`
+			expression = `^(\[[0-9]+ [^]]+\] )?(?P<routine_connection>(outbound/[^ ]+: outbound connection to|inbound/[^ ]+: inbound connection (from|to)) [^ ]+)$`
 		}
 
 		stage.template {
@@ -109,6 +158,15 @@ loki.process "docker" {
 		stage.template {
 			source   = "text_level"
 			template = `{{ if and (eq .Value "INFO") .routine_controller_stats }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+
+		stage.regex {
+			expression = `^\[[^]]+\] INFO \[QuorumController id=[0-9]+\] (?P<routine_election>Periodic task (electUnclean|electPreferred) generated 0 records in [0-9]+ microseconds\. \(org\.apache\.kafka\.controller\.PeriodicTaskControlManager\))\s*$`
+		}
+
+		stage.template {
+			source   = "text_level"
+			template = `{{ if and (eq .Value "INFO") .routine_election }}debug{{ else }}{{ .Value }}{{ end }}`
 		}
 	}
 

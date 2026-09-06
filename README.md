@@ -27,10 +27,12 @@ names (update the selectors if containers are renamed):
 
 | Container | Format / policy |
 | --- | --- |
-| `egress-router` | sing-box timestamp and explicit severity; INFO `outbound/...: outbound connection to ...` and `inbound/...: inbound connection from ...` events become `debug`, with or without a `[connection-id elapsed]` prefix |
+| `egress-router` | sing-box timestamp and explicit severity; INFO `outbound/...: outbound connection to ...` and `inbound/...: inbound connection from/to ...` events become `debug`, with or without a `[connection-id elapsed]` prefix |
 | `kafka-kafka-ui-1` | Java timestamp followed by explicit severity, including `DEBUG` scheduler events |
-| `kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug` |
+| `kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug`; `PeriodicTaskControlManager` reports for `electUnclean`/`electPreferred` become `debug` only when they generated zero records |
 | `ollama-ollama-1` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` and `GET /api/tags` probes = `debug` |
+| `stash-postgres-1` | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
+| `loki-loki-1` | INFO logfmt stats requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups from `table_manager.go` and known index upload/cleanup messages from `index_set.go` become `debug` |
 
 These rules do not drop records. Known routine events become filterable debug
 logs, while warnings and errors retain their severity. Other INFO events are
@@ -38,6 +40,17 @@ not downgraded. GIN severity is a status-based policy, not a native log level.
 Ollama's `ollama list` healthcheck requests `/api/tags`. The loopback rule also
 covers manual local calls to that endpoint: access logs cannot distinguish them
 from probes. Non-loopback requests retain their status-based severity.
+
+Loki rules require a line starting with `level=` and match parsed fields, not
+query contents or source line numbers. Slow/failed requests retain their original
+level. PostgreSQL checkpoint timing details remain available at debug; no slow
+checkpoint duration threshold is inferred by this pipeline.
+
+Grafana's `ngalert.state.manager` / `Detected stale state entry` remains at INFO,
+even with `state=Normal reason=`. It indicates an alert instance missing from
+evaluations, not just cache housekeeping. The logged state is the previous state,
+before Grafana assigns `MissingSeries`; suppressing this can hide lost coverage.
+See [Grafana v12.0.0 stale-state handling](https://github.com/grafana/grafana/blob/v12.0.0/pkg/services/ngalert/state/manager.go#L519-L567).
 
 Missing or unsupported levels (including other unstructured text) become `unknown`,
 not `info`. Severity words inside message text are not used to guess a level.
