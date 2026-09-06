@@ -125,7 +125,7 @@ loki.process "docker" {
 	}
 
 	stage.match {
-		selector = `{container="stash-postgres-1"}`
+		selector = `{container=~"(stash-postgres-1|subscriptions-bot-postgres-1|subscription-publisher-postgres-1|subscription-catalog-postgres-1)"}`
 
 		stage.regex {
 			expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+ [A-Za-z0-9_+:/-]+ \[[0-9]+\] (?P<text_level>DEBUG[1-5]?|INFO|NOTICE|LOG|WARNING|ERROR|FATAL|PANIC):\s+(?P<postgres_message>.*)$`
