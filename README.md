@@ -22,7 +22,21 @@ Canonical values are `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and
 | `notice`, `information`, `informational` | `info` |
 | `critical`, `crit`, `panic`, `emerg`, `emergency`, `alert` | `fatal` |
 
-Missing or unsupported levels (including unstructured text) become `unknown`,
+The following text formats are also parsed, scoped to the deployed container
+names (update the selectors if containers are renamed):
+
+| Container | Format / policy |
+| --- | --- |
+| `egress-router` | sing-box timestamp and explicit severity; INFO `outbound/...: outbound connection to ...` events become `debug` |
+| `kafka-kafka-ui-1` | Java timestamp followed by explicit severity, including `DEBUG` scheduler events |
+| `kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug` |
+| `ollama-ollama-1` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` probes = `debug` |
+
+These rules do not drop records. Known routine events become filterable debug
+logs, while warnings and errors retain their severity. Other INFO events are
+not downgraded. GIN severity is a status-based policy, not a native log level.
+
+Missing or unsupported levels (including other unstructured text) become `unknown`,
 not `info`. Severity words inside message text are not used to guess a level.
 Numeric severity fields are not interpreted.
 
