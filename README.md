@@ -47,6 +47,11 @@ Ollama's `ollama list` healthcheck requests `/api/tags`. The loopback rule also
 covers manual local calls to that endpoint: access logs cannot distinguish them
 from probes. Non-loopback requests retain their status-based severity.
 
+The exact INFO message `adjusting end timerange from future to now` from
+`composite_store_entry.go` is also debug. The distinct message `whole timerange
+in future, yield empty resultset` remains INFO: it can explain missing results
+and warrants checking the requested time range and clock alignment.
+
 Loki rules require a line starting with `level=` and match parsed fields, not
 query contents or source line numbers. Slow/failed requests retain their original
 level. The maintenance allowlist matches exact caller/message pairs for table
