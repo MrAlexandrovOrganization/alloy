@@ -78,7 +78,7 @@ loki.process "docker" {
 
 		stage.regex {
 			source     = "singbox_message"
-			expression = `^(?P<routine_connection>outbound/[^ ]+: outbound connection to [^ ]+)$`
+			expression = `^(\[[0-9]+ [^]]+\] )?(?P<routine_connection>(outbound/[^ ]+: outbound connection to|inbound/[^ ]+: inbound connection from) [^ ]+)$`
 		}
 
 		stage.template {
@@ -121,7 +121,7 @@ loki.process "docker" {
 		// GIN has no severity: classify status, with successful local probes at debug.
 		stage.template {
 			source   = "text_level"
-			template = `{{ if .http_status }}{{ if ge .http_status "500" }}error{{ else if ge .http_status "400" }}warn{{ else if and (ge .http_status "200") (lt .http_status "300") (or (eq .http_client "127.0.0.1") (eq .http_client "::1")) (eq .http_method "HEAD") (eq .http_path "/") }}debug{{ else }}info{{ end }}{{ else }}unknown{{ end }}`
+			template = `{{ if .http_status }}{{ if ge .http_status "500" }}error{{ else if ge .http_status "400" }}warn{{ else if and (ge .http_status "200") (lt .http_status "300") (or (eq .http_client "127.0.0.1") (eq .http_client "::1")) (or (and (eq .http_method "HEAD") (eq .http_path "/")) (and (eq .http_method "GET") (eq .http_path "/api/tags"))) }}debug{{ else }}info{{ end }}{{ else }}unknown{{ end }}`
 		}
 	}
 
