@@ -32,7 +32,8 @@ names (update the selectors if containers are renamed):
 | `kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug`; `PeriodicTaskControlManager` reports for `electUnclean`/`electPreferred` become `debug` only when they generated zero records |
 | `ollama-ollama-1` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` and `GET /api/tags` probes = `debug` |
 | `stash-postgres-1` | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
-| `loki-loki-1` | INFO logfmt stats requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups from `table_manager.go` and known index upload/cleanup messages from `index_set.go` become `debug` |
+| `loki-loki-1` | INFO logfmt stats/metric/limited requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups and explicitly listed maintenance/query-start events become `debug` |
+| `telemt` | Rust tracing timestamp, severity and `telemt::...` target; native levels are preserved, including INFO/WARN TLS/SNI rejection events |
 
 For `stash-stash-1`, JSON `body` (or `msg` if body is absent/empty) equal to
 `embedding backfill: processing` is downgraded from `info` to `debug`. Other
@@ -48,7 +49,13 @@ from probes. Non-loopback requests retain their status-based severity.
 
 Loki rules require a line starting with `level=` and match parsed fields, not
 query contents or source line numbers. Slow/failed requests retain their original
-level. PostgreSQL checkpoint timing details remain available at debug; no slow
+level. The maintenance allowlist matches exact caller/message pairs for table
+listing, compaction, source-index cleanup, file downloads, empty retention marks,
+WAL checkpoints, stream ownership recalculation and table synchronization. Query
+start messages from `engine.go`/`roundtrip.go` are debug regardless of eventual
+outcome; slow/failed completion records are not downgraded. Unknown messages and
+warning/error variants are preserved. Loki and PostgreSQL checkpoint timing
+details remain available at debug; no slow
 checkpoint duration threshold is inferred by this pipeline.
 
 Grafana's `ngalert.state.manager` / `Detected stale state entry` remains at INFO,

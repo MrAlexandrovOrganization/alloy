@@ -85,7 +85,7 @@ loki.process "docker" {
 
 		stage.regex {
 			source     = "loki_caller"
-			expression = `^(?P<loki_caller_file>metrics\.go|table_manager\.go|index_set\.go):[0-9]+$`
+			expression = `^(?P<loki_caller_file>[a-z_]+\.go):[0-9]+$`
 		}
 
 		stage.regex {
@@ -96,7 +96,31 @@ loki.process "docker" {
 		// Keep slow/failed queries and unexpected index operations visible.
 		stage.template {
 			source   = "logfmt_level"
-			template = `{{ if and (eq .Value "info") (or (and (eq .loki_caller_file "metrics.go") (eq .loki_query_type "stats") (eq .loki_status "200") (eq .loki_latency "fast")) (and (eq .loki_caller_file "table_manager.go") (eq .loki_message "get or create table") (eq .loki_found "true")) (and (eq .loki_caller_file "index_set.go") .routine_index_operation)) }}debug{{ else }}{{ .Value }}{{ end }}`
+			template = `{{ if and (eq .Value "info") (or (and (eq .loki_caller_file "metrics.go") (or (eq .loki_query_type "stats") (eq .loki_query_type "metric") (eq .loki_query_type "limited")) (eq .loki_status "200") (eq .loki_latency "fast")) (and (eq .loki_caller_file "table_manager.go") (eq .loki_message "get or create table") (eq .loki_found "true")) (and (eq .loki_caller_file "index_set.go") .routine_index_operation)) }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+
+		// Match exact caller/message pairs, never words inside query or error text.
+		stage.template {
+			source   = "loki_event"
+			template = `{{ .loki_caller_file }}:{{ .loki_message }}`
+		}
+
+		stage.regex {
+			source     = "loki_event"
+			expression = `^(?P<routine_loki_event>table\.go:listed files|compactor\.go:(compacting table|finished compacting table)|index_set\.go:removing source db files from storage|util\.go:(downloaded file|downloaded and extracted file)|marker\.go:no marks file found|(engine|roundtrip)\.go:executing query|checkpoint\.go:(attempting checkpoint for|starting checkpoint|atomic checkpoint finished|checkpoint done)|recalculate_owned_streams\.go:(starting recalculate owned streams job|completed recalculate owned streams job)|table_manager\.go:(query readiness setup completed|syncing tables|uploading tables))$`
+		}
+
+		stage.template {
+			source   = "logfmt_level"
+			template = `{{ if and (eq .Value "info") .routine_loki_event }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+	}
+
+	stage.match {
+		selector = `{container="telemt"}`
+
+		stage.regex {
+			expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\s+(?P<text_level>TRACE|DEBUG|INFO|WARN|ERROR)\s+telemt(::[A-Za-z0-9_]+)+:\s+`
 		}
 	}
 
