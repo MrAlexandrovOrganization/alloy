@@ -195,6 +195,21 @@ loki.process "docker" {
 		template = `{{ if eq .Value "warning" }}warn{{ else if or (eq .Value "critical") (eq .Value "crit") (eq .Value "panic") (eq .Value "emerg") (eq .Value "emergency") (eq .Value "alert") }}fatal{{ else if eq .Value "err" }}error{{ else if or (eq .Value "notice") (eq .Value "information") (eq .Value "informational") }}info{{ else if or (eq .Value "trace") (eq .Value "debug") (eq .Value "info") (eq .Value "warn") (eq .Value "error") (eq .Value "fatal") }}{{ .Value }}{{ else }}unknown{{ end }}`
 	}
 
+	stage.match {
+		selector = `{container="stash-stash-1"} |~ "^\\s*\\{"`
+
+		stage.json {
+			expressions = {
+				stash_message = "body || msg",
+			}
+		}
+
+		stage.template {
+			source   = "normalized_level"
+			template = `{{ if and (eq .Value "info") (eq .stash_message "embedding backfill: processing") }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+	}
+
 	stage.labels {
 		values = {
 			level = "normalized_level",

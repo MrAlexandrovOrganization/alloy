@@ -34,6 +34,11 @@ names (update the selectors if containers are renamed):
 | `stash-postgres-1` | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
 | `loki-loki-1` | INFO logfmt stats requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups from `table_manager.go` and known index upload/cleanup messages from `index_set.go` become `debug` |
 
+For `stash-stash-1`, JSON `body` (or `msg` if body is absent/empty) equal to
+`embedding backfill: processing` is downgraded from `info` to `debug`. Other
+messages and warning/error levels are unchanged. This is a collector-side rule
+because the deployed backfill implementation is absent from the local checkout.
+
 These rules do not drop records. Known routine events become filterable debug
 logs, while warnings and errors retain their severity. Other INFO events are
 not downgraded. GIN severity is a status-based policy, not a native log level.
