@@ -44,7 +44,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 512m
+          memory: ${ALLOY_MEMORY_LIMIT:-512m}
 
 volumes:
   alloy_data:
