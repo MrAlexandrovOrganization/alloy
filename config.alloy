@@ -13,6 +13,29 @@ loki.relabel "docker" {
 		target_label  = "container"
 	}
 
+	// Fall back to the container name for containers outside Compose.
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "service"
+	}
+
+	// Compose service names alone (e.g. "app") are not unique across projects.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project", "__meta_docker_container_label_com_docker_compose_service"]
+		separator     = "/"
+		regex         = "(.+)/(.+)"
+		replacement   = "$1/$2"
+		target_label  = "service"
+	}
+
+	// Applications may opt into a canonical name shared with their metrics.
+	rule {
+		source_labels = ["__meta_docker_container_label_observability_service"]
+		regex         = "(.+)"
+		target_label  = "service"
+	}
+
 	rule {
 		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
 		target_label  = "compose_service"
@@ -29,7 +52,7 @@ loki.source.docker "containers" {
 	targets       = discovery.docker.host.targets
 	forward_to    = [loki.process.docker.receiver]
 	relabel_rules = loki.relabel.docker.rules
-	labels        = {job = "docker"}
+	labels        = {job = "docker", host = sys.env("ALLOY_HOST")}
 }
 
 loki.process "docker" {

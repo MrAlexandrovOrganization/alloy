@@ -5,7 +5,9 @@ NET = loki-net
 CONFIG ?= config.alloy
 
 -include .env
+ALLOY_HOST ?= $(shell hostname)
 export
+include makefiles/versions.mk
 
 up: init
 	$(DOCKER_COMPOSE) up -d
@@ -53,3 +55,9 @@ migrate-hooks:
 	@sh scripts/install-hooks.sh migrate
 
 .PHONY: up down logs init network fmt fmt-check config-check check install-hooks migrate-hooks
+
+.PHONY: versions recreate
+versions:
+	@$(foreach v,$(VERSION_VARS),printf '%s=%s\n' '$(v)' '$($(v))';)
+recreate:
+	$(DOCKER_COMPOSE) up -d --force-recreate alloy

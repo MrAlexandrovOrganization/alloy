@@ -32,7 +32,7 @@ jobs:
             git pull
             make init
             # Recreate to reload config and refresh the single-file bind mount after git pull.
-            docker compose up -d --force-recreate alloy
+            make recreate
 
       - name: Smoke test Alloy and ingestion
         uses: appleboy/ssh-action@v1

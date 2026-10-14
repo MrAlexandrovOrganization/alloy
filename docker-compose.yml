@@ -5,7 +5,7 @@ networks:
 
 services:
   alloy:
-    image: grafana/alloy:v1.7.1
+    image: grafana/alloy:${ALLOY_VERSION:?Run via make}
     restart: unless-stopped
     command:
       - run

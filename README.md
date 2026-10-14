@@ -1,6 +1,54 @@
 # Alloy
 
+## Image version
+
+The Alloy image version lives in `makefiles/versions.mk`. `make versions` prints it.
+Compose, formatting checks and CI all use this value through Make. Use
+`make up` or `make recreate` to activate configuration/image changes.
+
+## Host identity and persistent state
+
+`make` exports `ALLOY_HOST`, defaulting to the machine's hostname. Set it in the
+local `.env` (for example `ALLOY_HOST=server`, `ALLOY_HOST=hostkey-russia`, or
+`ALLOY_HOST=wsl`) to use stable inventory names. Direct Compose commands must
+provide `ALLOY_HOST` as well as the image version.
+
+New Docker log streams include `host` and `service`. Service selection is:
+
+1. Explicit container label `observability.service`, when non-empty.
+2. Compose `<project>/<service>`, such as `notes-bot/core`.
+3. Container name for containers outside Compose.
+
+Existing `container`, `compose_service`, `compose_project`, `job`, and `level`
+labels remain available. Historical streams are not relabeled. For example,
+query `{host="server", service="notes-bot/core"}` for newly collected logs.
+No `environment` label is added.
+
+Alloy explicitly uses `--storage.path=/var/lib/alloy/data`, matching the
+`observability_alloy_data` volume. Docker log positions therefore survive
+container recreation. This is collector state, not a durable queue of unsent
+logs: the current `loki.write` pipeline still uses its existing retry policy.
+Records older than one hour are still dropped by the existing processing rule.
+
+Before the first production recreation, preserve the old container's
+`/data-alloy` directory: the previous configuration wrote positions into the
+container layer instead of the mounted volume. Stop the collector, back up that
+directory from the stopped container, and import its contents into
+`observability_alloy_data` before starting the updated collector. Keep the backup
+until ingestion and position persistence have been verified. Do not run
+`down -v`; Docker log rotation still limits what can be recovered from a source.
+
 ## Log Levels
+
+Caddy uses the existing Docker stdout → Alloy → Loki pipeline; it does not need
+to join `loki-net`. Its access logs are JSON with `service=caddy` and a bounded
+`site` field. The existing JSON `level` normalization applies automatically.
+Request objects, response headers and user IDs are removed in Caddy before
+collection, including subscription URL credentials. Docker's event timestamp
+remains the ingestion timestamp source; the body also preserves Caddy's UTC Unix
+`ts`. No Caddy trace IDs are synthesized. Query `{container="caddy"}` in Grafana.
+Delivery and redaction were verified using an invalid synthetic subscription
+request and querying the resulting record in Loki and through Grafana.
 
 The Docker pipeline sets both the indexed `level` label and the
 `detected_level` structured metadata to the same normalized severity. Explicit
