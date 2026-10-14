@@ -237,8 +237,8 @@ each inventory host. Host secrets, data and migration backups never enter Git.
 forwarders, bound only to loopback. Install the templates under
 `/etc/systemd/system`, set `OBSERVABILITY_HUB` in `/etc/observability-forward.env`,
 reload systemd and enable only the required socket instances. On the old server,
-ports 3000/3100/9090 forward to WSL so existing local tools keep working. On WSL,
-16686/15434/15432 forward to server's tailnet endpoints for Jaeger and PostgreSQL.
-Docker Desktop uses `host.docker.internal` to reach these native WSL listeners;
-it cannot directly use the Ubuntu distribution's tailnet routes. No Windows
-metrics, new public listeners or changes to proxy/exit-node routes are needed.
+ports 3000/3100/9090 forward to WSL so existing local tools keep working.
+Grafana on Docker Desktop uses its own persistent tailnet sidecar to access
+remote datasources; native Ubuntu loopback proxies are not used for that path.
+No Windows metrics, new public listeners or changes to host exit-node routes
+are needed.
