@@ -1,25 +1,32 @@
 DOCKER_COMPOSE ?= docker compose
 DOCKER ?= docker
 PRE_COMMIT ?= pre-commit
-NET = loki-net
+NETS = loki-net prometheus-net caddy-metrics-net
 CONFIG ?= config.alloy
 
 -include .env
 ALLOY_HOST ?= $(shell hostname)
+MONITORING_DATA_DIR ?= $(HOME)/.monitoring
 export
 include makefiles/versions.mk
 
-up: init
+up: init migrate-state
 	$(DOCKER_COMPOSE) up -d
 
-init: network
+init: network directories
 
 network:
-	@if $(DOCKER) network inspect $(NET) >/dev/null 2>&1; then \
-		echo "network $(NET) already exists"; \
-	else \
-		$(DOCKER) network create $(NET) --opt com.docker.network.driver.mtu=1376; \
-	fi
+	@for n in $(NETS); do \
+		if ! $(DOCKER) network inspect $$n >/dev/null 2>&1; then \
+			$(DOCKER) network create $$n --opt com.docker.network.driver.mtu=1376; \
+		fi; \
+	done
+
+directories:
+	@mkdir -p "$(MONITORING_DATA_DIR)/prometheus-targets"
+
+migrate-state:
+	python3 scripts/migrate-state.py
 
 down:
 	$(DOCKER_COMPOSE) down
@@ -27,7 +34,7 @@ down:
 logs:
 	$(DOCKER_COMPOSE) logs -f
 
-fmt fmt-check:
+format format-check:
 	@set -eu; \
 	image=$$($(DOCKER_COMPOSE) config --images alloy); \
 	formatted=$$(mktemp); \
@@ -35,7 +42,7 @@ fmt fmt-check:
 	trap 'exit 1' HUP INT TERM; \
 	$(DOCKER) run --rm -i "$$image" fmt - \
 		< "$(CONFIG)" > "$$formatted"; \
-	if [ "$@" = fmt ]; then \
+	if [ "$@" = format ]; then \
 		if ! cmp -s "$(CONFIG)" "$$formatted"; then \
 			cat "$$formatted" > "$(CONFIG)"; \
 		fi; \
@@ -46,7 +53,13 @@ fmt fmt-check:
 config-check:
 	$(DOCKER_COMPOSE) config -q
 
-check: fmt-check config-check
+test:
+	python3 -m unittest discover -s tests -v
+
+smoke:
+	python3 scripts/smoke.py
+
+check: format-check config-check test
 
 install-hooks:
 	@sh scripts/install-hooks.sh install
@@ -54,10 +67,10 @@ install-hooks:
 migrate-hooks:
 	@sh scripts/install-hooks.sh migrate
 
-.PHONY: up down logs init network fmt fmt-check config-check check install-hooks migrate-hooks
+.PHONY: up down logs init network directories migrate-state format format-check config-check test smoke check install-hooks migrate-hooks
 
 .PHONY: versions recreate
 versions:
 	@$(foreach v,$(VERSION_VARS),printf '%s=%s\n' '$(v)' '$($(v))';)
-recreate:
+recreate: init migrate-state
 	$(DOCKER_COMPOSE) up -d --force-recreate alloy

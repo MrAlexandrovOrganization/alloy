@@ -30,13 +30,9 @@ container recreation. This is collector state, not a durable queue of unsent
 logs: the current `loki.write` pipeline still uses its existing retry policy.
 Records older than one hour are still dropped by the existing processing rule.
 
-Before the first production recreation, preserve the old container's
-`/data-alloy` directory: the previous configuration wrote positions into the
-container layer instead of the mounted volume. Stop the collector, back up that
-directory from the stopped container, and import its contents into
-`observability_alloy_data` before starting the updated collector. Keep the backup
-until ingestion and position persistence have been verified. Do not run
-`down -v`; Docker log rotation still limits what can be recovered from a source.
+Before the first production recreation, `make up`/`make recreate` run the
+legacy state migration described below. Keep its private backup until ingestion
+and position persistence have been verified. Do not run `down -v`.
 
 ## Log Levels
 
@@ -134,13 +130,13 @@ This normalizes severity, not the applications' different JSON message schemas.
 ## Checks and Formatting
 
 Formatting requires Docker Compose and a running Docker daemon. The Alloy image
-is pinned only in `docker-compose.yml`. Formatting commands resolve it with
+version is pinned in `makefiles/versions.mk`. Formatting commands resolve it with
 `docker compose config --images alloy`, so runtime, local checks, and CI use the
-same image. To upgrade Alloy, change `services.alloy.image` in that file.
+same image. To upgrade Alloy, change `ALLOY_VERSION` in `makefiles/versions.mk`.
 
 ```sh
-make fmt           # Format config.alloy in place
-make fmt-check     # Check without modifying config.alloy
+make format           # Format config.alloy in place
+make format-check     # Check without modifying config.alloy
 make config-check  # Validate Docker Compose configuration (read-only)
 make check         # All read-only checks; also used by CI
 make install-hooks # Install the pre-commit hook once per clone
@@ -148,10 +144,10 @@ make install-hooks # Install the pre-commit hook once per clone
 
 Both formatting commands pass the configuration to Docker through stdin and
 capture output in a local temporary file, without bind-mounting temporary paths
-(including on Colima). `fmt` only overwrites the source after the formatter
+(including on Colima). `format` only overwrites the source after the formatter
 succeeds. A Docker or syntax error leaves the source unchanged. `CONFIG=path`
 can select another file for manual formatting. Alloy v1.7.1 has no standalone
-`validate` command: `fmt-check` checks Alloy syntax and formatting, while
+`validate` command: `format-check` checks Alloy syntax and formatting, while
 `config-check` validates Compose, not Alloy component semantics. No services
 are started by `make check`.
 
@@ -195,3 +191,44 @@ and existing backups, and preserves the old hook as
 `.git/hooks/pre-commit.alloy-legacy` (not executed by the framework). If installation
 fails, the original hook is restored. `.githooks/pre-commit` is retained unchanged
 as a legacy reference, not the active hook definition. No migration is automatic.
+
+## Multi-host metrics and migration
+
+Python 3.11+, Make, Docker and Compose are prerequisites. `make install` is not
+needed: runtime/tool images use the pinned Alloy release. Each host uses its own
+`.env` based on `.env.example`; on WSL set the receiver URLs to the local Docker
+aliases, on the VMs use WSL's tailnet endpoints. The host name is passed explicitly
+into the container. No Windows exporter or environment label is configured.
+
+Alloy scrapes cAdvisor (embedded), Linux (embedded node exporter), itself and
+`$MONITORING_DATA_DIR/prometheus-targets/*.{yml,json}` every 15 seconds. It joins
+`prometheus-net` and `caddy-metrics-net`, preserving existing application/Caddy
+Docker aliases. Caddy's target must be registered in the server's local file SD.
+Container metrics use the existing `cadvisor` job; node metrics use `node`.
+All metrics carry `host`, and node/container/service targets include `service`.
+The Docker Desktop deployment on WSL reports the Linux Docker runtime; Windows
+metrics are intentionally outside this configuration.
+
+`prometheus.remote_write.central` stores its WAL under the same persistent
+storage path as log positions. Unsent samples expire after 24h; acknowledged
+samples are cleaned by segment compaction (hourly, minimum age 5m). This is a
+bounded retry buffer, not a guarantee for outages longer than a day or a full disk.
+Logs retain the existing pipeline, retries and one-hour age filter.
+
+`make up` / `make recreate` first run `migrate-state`. If the existing container
+uses the legacy implicit `/data-alloy` path, migration refuses a non-empty target
+volume, stops the collector, writes a private tar backup, imports its complete
+state, then lets Compose recreate the collector with explicit persistent storage.
+On import failure the old collector is restarted; backups and the source container
+are retained. Review a partial target volume manually before retrying, never
+blindly overwrite it. `make test` verifies this using isolated Docker containers,
+synthetic positions and private temporary backups. It never touches production.
+
+`make smoke` explicitly verifies node/cAdvisor/self metrics and Docker log arrival
+in the configured backends. If the Loki Docker alias is not resolvable from the
+host shell, set `LOKI_QUERY_URL` to its tailnet or loopback URL for this check.
+
+Automatic SSH deployment is opt-in via repository variable `DEPLOY_ENABLED`.
+The old single-VM workflow must not update/recreate collectors while performing a
+coordinated state migration. Deploy the CI-checked Git revision and apply Make on
+each inventory host. Host secrets, data and migration backups never enter Git.

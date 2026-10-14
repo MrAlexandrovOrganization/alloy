@@ -2,21 +2,41 @@ networks:
   loki-net:
     external: true
     name: loki-net
+  prometheus-net:
+    external: true
+    name: prometheus-net
+  caddy-metrics-net:
+    external: true
+    name: caddy-metrics-net
 
 services:
   alloy:
     image: grafana/alloy:${ALLOY_VERSION:?Run via make}
     restart: unless-stopped
+    privileged: true
+    pid: host
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
       - /etc/alloy/config.alloy
+    environment:
+      ALLOY_HOST: ${ALLOY_HOST:?Run via make}
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
+      PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:?Set the central receiver URL}
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - alloy_data:/var/lib/alloy/data
+      - /:/rootfs:ro
+      - /proc:/host/proc:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - ${MONITORING_DATA_DIR:?Run via make}/prometheus-targets:/etc/alloy/targets:ro
     networks:
       - loki-net
+      - prometheus-net
+      - caddy-metrics-net
     extends:
       file: docker-compose.base.yml
       service: base
@@ -24,7 +44,7 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 384m
+          memory: 512m
 
 volumes:
   alloy_data:

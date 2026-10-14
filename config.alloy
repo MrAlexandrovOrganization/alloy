@@ -288,6 +288,119 @@ loki.process "docker" {
 
 loki.write "loki" {
 	endpoint {
-		url = "http://loki:3100/loki/api/v1/push"
+		url = sys.env("LOKI_PUSH_URL")
+	}
+}
+
+// Scrape locally so a central receiver outage does not interrupt collection.
+prometheus.exporter.unix "host" {
+	procfs_path = "/host/proc"
+	sysfs_path  = "/sys"
+	rootfs_path = "/rootfs"
+}
+
+prometheus.exporter.cadvisor "containers" {
+	docker_only = true
+}
+
+prometheus.scrape "host" {
+	targets         = prometheus.exporter.unix.host.targets
+	job_name        = "node"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.relabel.host.receiver]
+}
+
+prometheus.relabel "host" {
+	forward_to = [prometheus.remote_write.central.receiver]
+
+	rule {
+		target_label = "instance"
+		replacement  = sys.env("ALLOY_HOST")
+	}
+
+	rule {
+		target_label = "service"
+		replacement  = "linux"
+	}
+}
+
+prometheus.scrape "containers" {
+	targets         = prometheus.exporter.cadvisor.containers.targets
+	job_name        = "cadvisor"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.relabel.containers.receiver]
+}
+
+prometheus.relabel "containers" {
+	forward_to = [prometheus.remote_write.central.receiver]
+
+	rule {
+		target_label = "instance"
+		replacement  = sys.env("ALLOY_HOST")
+	}
+
+	rule {
+		source_labels = ["name"]
+		regex         = "/?(.+)"
+		target_label  = "service"
+	}
+}
+
+discovery.file "services" {
+	files            = ["/etc/alloy/targets/*.yml", "/etc/alloy/targets/*.json"]
+	refresh_interval = "30s"
+}
+
+discovery.relabel "services" {
+	targets = discovery.file.services.targets
+
+	rule {
+		source_labels = ["service"]
+		target_label  = "__tmp_service"
+	}
+
+	rule {
+		source_labels = ["__address__"]
+		regex         = "([^:]+)(:.*)?"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__tmp_service"]
+		regex         = "(.+)"
+		target_label  = "service"
+	}
+}
+
+prometheus.scrape "services" {
+	targets         = discovery.relabel.services.output
+	job_name        = "services"
+	honor_labels    = true
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.scrape "self" {
+	targets         = [{"__address__" = "127.0.0.1:12345", "instance" = sys.env("ALLOY_HOST"), "service" = "alloy"}]
+	job_name        = "alloy"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.remote_write "central" {
+	external_labels = {host = sys.env("ALLOY_HOST")}
+
+	endpoint {
+		url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+
+		queue_config {
+			max_shards = 4
+		}
+	}
+
+	wal {
+		truncate_frequency = "1h"
+		min_keepalive_time = "5m"
+		max_keepalive_time = "24h"
 	}
 }

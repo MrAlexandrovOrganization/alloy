@@ -13,13 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check formatting and configuration
+        env:
+          PROMETHEUS_REMOTE_WRITE_URL: http://127.0.0.1:19090/api/v1/write
         run: make check
 
   deploy:
     name: Deploy to VM
     runs-on: ubuntu-24.04
     needs: validate
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -41,14 +43,5 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            if [ "$(docker ps --filter 'name=alloy' --filter 'status=running' -q)" = "" ]; then
-              echo "Alloy container is not running."; exit 1
-            fi
-            echo "Alloy is running"
-            sleep 15
-            RESPONSE=$(curl -fsS -G http://127.0.0.1:3100/loki/api/v1/query \
-              --data-urlencode 'query={job="docker"}')
-            if echo "$RESPONSE" | grep -q '"result":\[\]'; then
-              echo "No logs ingested into Loki"; exit 1
-            fi
-            echo "Loki is ingesting docker logs"
+            cd ${{ secrets.VM_PROJECT_PATH }}
+            make smoke
