@@ -232,3 +232,13 @@ Automatic SSH deployment is opt-in via repository variable `DEPLOY_ENABLED`.
 The old single-VM workflow must not update/recreate collectors while performing a
 coordinated state migration. Deploy the CI-checked Git revision and apply Make on
 each inventory host. Host secrets, data and migration backups never enter Git.
+
+`systemd/observability-forward@.{socket,service}` are optional native Linux TCP
+forwarders, bound only to loopback. Install the templates under
+`/etc/systemd/system`, set `OBSERVABILITY_HUB` in `/etc/observability-forward.env`,
+reload systemd and enable only the required socket instances. On the old server,
+ports 3000/3100/9090 forward to WSL so existing local tools keep working. On WSL,
+16686/15434/15432 forward to server's tailnet endpoints for Jaeger and PostgreSQL.
+Docker Desktop uses `host.docker.internal` to reach these native WSL listeners;
+it cannot directly use the Ubuntu distribution's tailnet routes. No Windows
+metrics, new public listeners or changes to proxy/exit-node routes are needed.

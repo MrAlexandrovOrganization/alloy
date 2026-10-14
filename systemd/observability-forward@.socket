@@ -1,0 +1,9 @@
+[Unit]
+Description=Loopback compatibility endpoint for observability port %i
+
+[Socket]
+ListenStream=127.0.0.1:%i
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target

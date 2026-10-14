@@ -1,0 +1,12 @@
+[Unit]
+Description=Forward observability port %i to its tailnet backend
+After=network-online.target tailscaled.service
+
+[Service]
+EnvironmentFile=/etc/observability-forward.env
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd ${OBSERVABILITY_HUB}:%i
+DynamicUser=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
