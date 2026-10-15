@@ -16,6 +16,7 @@ services:
     privileged: true
     pid: host
     cgroup: host
+    entrypoint: ["sh", "/etc/alloy/start.sh"]
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -26,8 +27,10 @@ services:
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
       PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:?Set the central receiver URL}
       ALLOY_PROCFS_PATH: ${ALLOY_PROCFS_PATH:-/host/proc}
+      ALLOY_DOCKER_DESKTOP: ${ALLOY_DOCKER_DESKTOP:-false}
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
+      - ./scripts/start.sh:/etc/alloy/start.sh:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /run:/run:ro
       - alloy_data:/var/lib/alloy/data

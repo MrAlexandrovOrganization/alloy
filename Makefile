@@ -51,6 +51,7 @@ format format-check:
 	fi
 
 config-check:
+	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
 	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
 
