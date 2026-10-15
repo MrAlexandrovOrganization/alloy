@@ -294,7 +294,7 @@ loki.write "loki" {
 
 // Scrape locally so a central receiver outage does not interrupt collection.
 prometheus.exporter.unix "host" {
-	procfs_path = "/host/proc"
+	procfs_path = sys.env("ALLOY_PROCFS_PATH")
 	sysfs_path  = "/sys"
 	rootfs_path = "/rootfs"
 }

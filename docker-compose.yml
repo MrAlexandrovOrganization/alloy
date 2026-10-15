@@ -15,6 +15,7 @@ services:
     restart: unless-stopped
     privileged: true
     pid: host
+    cgroup: host
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -24,6 +25,7 @@ services:
       ALLOY_HOST: ${ALLOY_HOST:?Run via make}
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
       PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:?Set the central receiver URL}
+      ALLOY_PROCFS_PATH: ${ALLOY_PROCFS_PATH:-/host/proc}
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -31,7 +33,6 @@ services:
       - alloy_data:/var/lib/alloy/data
       - /:/rootfs:ro
       - /proc:/host/proc:ro
-      - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
       - ${MONITORING_DATA_DIR:?Run via make}/prometheus-targets:/etc/alloy/targets:ro
     networks:

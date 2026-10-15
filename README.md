@@ -243,10 +243,13 @@ remote datasources; native Ubuntu loopback proxies are not used for that path.
 No Windows metrics, new public listeners or changes to host exit-node routes
 are needed.
 
-Alloy is pinned to v1.20.1. This release includes the WAL restart correction
+Alloy is pinned to v1.20.1. This release includes a WAL record decoding correction
 ([upstream #7180](https://github.com/grafana/alloy/pull/7180)) and cAdvisor with
 support for Docker's containerd image store. The former v1.7.1 failed the
 outage/restart replay test and could not read container metrics on new hosts.
+The outage plus collector restart test also failed on v1.20.1: do not assume
+that retained WAL samples will be resent after the Alloy process restarts.
+The 24h buffer covers receiver/network outages while the collector keeps running.
 Keep a cold snapshot of the complete Alloy volume before an upgrade; do not
 change component IDs or clear the volume. Explicit relabeling keeps the `node`
 and `cadvisor` jobs stable instead of exporter-generated `integrations/*` names.
@@ -255,3 +258,7 @@ exported, avoiding unbounded deployment/configuration labels.
 The read-only `/run` mount supplies the containerd socket needed by Docker's
 overlayfs image store and udev metadata. The runtime smoke check requires metrics
 for named containers, not only a healthy cAdvisor scrape of the root cgroup.
+`cgroup: host` exposes the runtime's cgroup tree through the container's native
+`/sys`; do not bind-mount Ubuntu's `/sys` over it on Docker Desktop. On Docker
+Desktop set `ALLOY_PROCFS_PATH=/proc` to use the runtime's procfs. These metrics
+describe the Linux runtime, rather than the Windows host.

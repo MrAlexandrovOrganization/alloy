@@ -8,8 +8,8 @@ import urllib.parse
 import urllib.request
 
 
-def query(base, expression):
-    url = base + "?" + urllib.parse.urlencode({"query": expression})
+def query(base, expression, **params):
+    url = base + "?" + urllib.parse.urlencode({"query": expression, **params})
     with urllib.request.urlopen(url, timeout=10) as response:
         return json.load(response)["data"]["result"]
 
@@ -28,7 +28,12 @@ for attempt in range(12):
             prometheus + "/api/v1/query",
             'container_memory_usage_bytes{job="cadvisor",name!="",' + selector + "}",
         )
-        logs = query(loki + "/loki/api/v1/query", "{job=\"docker\"," + selector + "}")
+        logs = query(
+            loki + "/loki/api/v1/query_range",
+            "{job=\"docker\"," + selector + "}",
+            start=int((time.time() - 900) * 1e9),
+            limit=1,
+        )
         if {"node", "cadvisor", "alloy"} <= healthy and containers and logs:
             print(f"Delivery verified for {host}: node, cadvisor, alloy and Docker logs")
             break
