@@ -2,7 +2,7 @@
 set -eu
 
 # Docker Desktop's dockerd has a different mount namespace from Ubuntu.
-# Bind its image metadata read-only inside this collector's private namespace.
+# Read its image metadata through procfs inside this collector's namespace.
 if [ "${ALLOY_DOCKER_DESKTOP:-false}" = true ]; then
     runtime_root=
     for process in /proc/[0-9]*; do
@@ -16,10 +16,14 @@ if [ "${ALLOY_DOCKER_DESKTOP:-false}" = true ]; then
         echo 'Docker Desktop image metadata is unavailable' >&2
         exit 1
     }
-    for target in /var/lib/docker /rootfs/var/lib/docker; do
-        mount --bind "$runtime_root/var/lib/docker" "$target"
-        mount -o remount,bind,ro "$target"
-    done
+    # Cross-mount-namespace bind mounts lose the procfs root semantics.
+    # Detach only our private Ubuntu binds and preserve the magic procfs links.
+    umount -l /rootfs
+    rmdir /rootfs
+    ln -s "$runtime_root" /rootfs
+    umount -l /var/lib/docker
+    rmdir /var/lib/docker
+    ln -s "$runtime_root/var/lib/docker" /var/lib/docker
 fi
 
 exec /bin/alloy "$@"

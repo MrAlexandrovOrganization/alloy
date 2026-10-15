@@ -263,6 +263,8 @@ for named containers, not only a healthy cAdvisor scrape of the root cgroup.
 Desktop set `ALLOY_PROCFS_PATH=/proc` to use the runtime's procfs. These metrics
 describe the Linux runtime, rather than the Windows host.
 Also set `ALLOY_DOCKER_DESKTOP=true`: the startup wrapper finds the current
-host-PID `dockerd` and binds its image metadata read-only into the collector's
-private mount namespace. This avoids depending on a hardcoded daemon PID or
+host-PID `dockerd`, detaches the collector's private Ubuntu bind mounts and
+reads the runtime root/image metadata through `/proc/PID/root` symlinks.
+It does not write host files or modify the daemon's mount namespace.
+This avoids depending on a hardcoded daemon PID or
 mistaking Ubuntu's empty `/var/lib/docker` for Docker Desktop storage.
