@@ -15,7 +15,7 @@ def query(base, expression, **params):
 
 
 host = os.environ["ALLOY_HOST"]
-prometheus = os.environ["PROMETHEUS_REMOTE_WRITE_URL"].rsplit("/api/v1/write", 1)[0]
+prometheus = os.environ.get("PROMETHEUS_QUERY_URL") or os.environ["PROMETHEUS_REMOTE_WRITE_URL"].rsplit("/api/v1/write", 1)[0]
 loki = os.environ.get("LOKI_QUERY_URL") or os.environ["LOKI_PUSH_URL"].rsplit(
     "/loki/api/v1/push", 1
 )[0]

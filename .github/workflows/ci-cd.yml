@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   validate:
@@ -18,30 +22,24 @@ jobs:
         run: make check
 
   deploy:
-    name: Deploy to VM
+    name: Deploy to ${{ matrix.host }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs: validate
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [server, hostkey-russia, hostkey-finland, private-test-server, wsl]
+    concurrency:
+      group: deploy-${{ github.repository }}-${{ matrix.host }}
+      cancel-in-progress: false
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            cd ${{ secrets.VM_PROJECT_PATH }}
-            git pull
-            make init
-            # Recreate to reload config and refresh the single-file bind mount after git pull.
-            make recreate
-
-      - name: Smoke test Alloy and ingestion
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM_HOST }}
-          username: ${{ secrets.VM_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          script: |
-            cd ${{ secrets.VM_PROJECT_PATH }}
-            make smoke
+      - uses: actions/checkout@v4
+      - name: Deploy checked revision and verify service
+        run: make ci-deploy
+        env:
+          DEPLOY_TARGET: ${{ matrix.host }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}

@@ -228,10 +228,11 @@ synthetic positions and private temporary backups. It never touches production.
 in the configured backends. If the Loki Docker alias is not resolvable from the
 host shell, set `LOKI_QUERY_URL` to its tailnet or loopback URL for this check.
 
-Automatic SSH deployment is opt-in via repository variable `DEPLOY_ENABLED`.
-The old single-VM workflow must not update/recreate collectors while performing a
-coordinated state migration. Deploy the CI-checked Git revision and apply Make on
-each inventory host. Host secrets, data and migration backups never enter Git.
+Automatic SSH delivery through Hostkey Russia targets all five collectors after
+CI validation. It uses separate repository keys, pinned SSH host keys and a
+forced receiver that activates the exact checked commit. `DEPLOY_ENABLED`
+controls activation; [DEPLOY.md](DEPLOY.md) documents bootstrap and recovery.
+Host secrets, state and migration backups never enter Git.
 
 `systemd/observability-forward@.{socket,service}` are optional native Linux TCP
 forwarders, bound only to loopback. Install the templates under

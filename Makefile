@@ -76,3 +76,5 @@ versions:
 	@$(foreach v,$(VERSION_VARS),printf '%s=%s\n' '$(v)' '$($(v))';)
 recreate: init migrate-state
 	$(DOCKER_COMPOSE) up -d --force-recreate alloy
+
+include makefiles/ci-deploy.mk
