@@ -252,3 +252,6 @@ change component IDs or clear the volume. Explicit relabeling keeps the `node`
 and `cadvisor` jobs stable instead of exporter-generated `integrations/*` names.
 Only Compose project/service and `observability.service` container labels are
 exported, avoiding unbounded deployment/configuration labels.
+The read-only `/run` mount supplies the containerd socket needed by Docker's
+overlayfs image store and udev metadata. The runtime smoke check requires metrics
+for named containers, not only a healthy cAdvisor scrape of the root cgroup.

@@ -24,8 +24,12 @@ for attempt in range(12):
     try:
         metrics = query(prometheus + "/api/v1/query", "up{" + selector + "}")
         healthy = {m["metric"]["job"] for m in metrics if float(m["value"][1]) == 1}
+        containers = query(
+            prometheus + "/api/v1/query",
+            'container_memory_usage_bytes{job="cadvisor",name!="",' + selector + "}",
+        )
         logs = query(loki + "/loki/api/v1/query", "{job=\"docker\"," + selector + "}")
-        if {"node", "cadvisor", "alloy"} <= healthy and logs:
+        if {"node", "cadvisor", "alloy"} <= healthy and containers and logs:
             print(f"Delivery verified for {host}: node, cadvisor, alloy and Docker logs")
             break
     except (OSError, ValueError, KeyError):
