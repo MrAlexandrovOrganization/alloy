@@ -300,7 +300,9 @@ prometheus.exporter.unix "host" {
 }
 
 prometheus.exporter.cadvisor "containers" {
-	docker_only = true
+	docker_only                  = true
+	store_container_labels       = false
+	allowlisted_container_labels = ["com.docker.compose.project", "com.docker.compose.service", "observability.service"]
 }
 
 prometheus.scrape "host" {
@@ -312,6 +314,11 @@ prometheus.scrape "host" {
 
 prometheus.relabel "host" {
 	forward_to = [prometheus.remote_write.central.receiver]
+
+	rule {
+		target_label = "job"
+		replacement  = "node"
+	}
 
 	rule {
 		target_label = "instance"
@@ -335,13 +342,37 @@ prometheus.relabel "containers" {
 	forward_to = [prometheus.remote_write.central.receiver]
 
 	rule {
+		target_label = "job"
+		replacement  = "cadvisor"
+	}
+
+	rule {
 		target_label = "instance"
 		replacement  = sys.env("ALLOY_HOST")
 	}
 
 	rule {
+		target_label = "service"
+		replacement  = "docker"
+	}
+
+	rule {
 		source_labels = ["name"]
 		regex         = "/?(.+)"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["container_label_com_docker_compose_project", "container_label_com_docker_compose_service"]
+		separator     = "/"
+		regex         = "(.+)/(.+)"
+		replacement   = "$1/$2"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["container_label_observability_service"]
+		regex         = "(.+)"
 		target_label  = "service"
 	}
 }

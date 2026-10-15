@@ -146,9 +146,9 @@ Both formatting commands pass the configuration to Docker through stdin and
 capture output in a local temporary file, without bind-mounting temporary paths
 (including on Colima). `format` only overwrites the source after the formatter
 succeeds. A Docker or syntax error leaves the source unchanged. `CONFIG=path`
-can select another file for manual formatting. Alloy v1.7.1 has no standalone
-`validate` command: `format-check` checks Alloy syntax and formatting, while
-`config-check` validates Compose, not Alloy component semantics. No services
+can select another file for manual formatting. `format-check` checks Alloy syntax and formatting, while
+`config-check` validates Compose and Alloy component definitions without starting
+the collector. Runtime delivery checks are performed separately. No services
 are started by `make check`.
 
 ## Commit Hook
@@ -242,3 +242,13 @@ Grafana on Docker Desktop uses its own persistent tailnet sidecar to access
 remote datasources; native Ubuntu loopback proxies are not used for that path.
 No Windows metrics, new public listeners or changes to host exit-node routes
 are needed.
+
+Alloy is pinned to v1.20.1. This release includes the WAL restart correction
+([upstream #7180](https://github.com/grafana/alloy/pull/7180)) and cAdvisor with
+support for Docker's containerd image store. The former v1.7.1 failed the
+outage/restart replay test and could not read container metrics on new hosts.
+Keep a cold snapshot of the complete Alloy volume before an upgrade; do not
+change component IDs or clear the volume. Explicit relabeling keeps the `node`
+and `cadvisor` jobs stable instead of exporter-generated `integrations/*` names.
+Only Compose project/service and `observability.service` container labels are
+exported, avoiding unbounded deployment/configuration labels.
