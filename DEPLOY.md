@@ -1,10 +1,10 @@
 # SSH delivery of observability
 
 GitHub-hosted Actions validate each repository and deploy the same commit SHA.
-Prometheus, Loki and Grafana target only WSL; Alloy uses a five-host matrix.
+Prometheus, Loki and Grafana target only WSL; Alloy uses a six-host matrix.
 The public SSH gateway is Hostkey Russia (`193.187.93.245`). The other targets
 use native SSH port 22 over Headscale: server `.1`, WSL `.3`, private-test `.4`,
-Finland `.6` in `100.64.0.0/24`. WSL's LAN port 2222 is not used by Actions.
+Finland `.6`, ASUS `.11` in `100.64.0.0/24`. WSL's LAN port 2222 is not used by Actions.
 
 ## Trust and bootstrap
 
@@ -16,7 +16,7 @@ trusted administrative SSH connections; do not replace pinning with an unverifie
 `ssh-keyscan` or disable host verification.
 
 Russia has a dedicated `observability-deploy` SSH gateway account. Each central
-key permits forwarding only to WSL SSH; Alloy's key permits only the five
+key permits forwarding only to WSL SSH; Alloy's key permits only the six
 inventory SSH destinations. The SSH daemon allows only local TCP forwarding for
 this account and prohibits remote listeners and password authentication; its
 forced command denies shell sessions. On targets (including maxim on Russia),

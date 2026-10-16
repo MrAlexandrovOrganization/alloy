@@ -25,20 +25,26 @@ class SSHTransportTests(unittest.TestCase):
             self.assertIn("StrictHostKeyChecking yes", text)
             self.assertIn("ForwardAgent no", text)
             self.assertIn("ProxyJump obs-gateway", text)
+            self.assertIn("HostName 100.64.0.11", text)
+            self.assertIn("HostKeyAlias obs-asus-server", text)
             self.assertEqual(stat.S_IMODE((config.parent / "key").stat().st_mode), 0o600)
             self.assertEqual(args[-1], "deploy " + "a" * 40)
+            self.assertEqual(args[-2], "obs-asus-server")
 
-        with patch.dict(os.environ, self.environment(), clear=True), patch.object(client.subprocess, "run", side_effect=ssh):
+        env = self.environment()
+        env["DEPLOY_TARGET"] = "asus-server"
+        with patch.dict(os.environ, env, clear=True), patch.object(client.subprocess, "run", side_effect=ssh):
             client.main()
         self.assertTrue(paths)
         self.assertFalse(paths[0].exists())
 
     def test_central_project_cannot_target_old_server(self):
         env = self.environment()
-        env["DEPLOY_TARGET"] = "server"
-        with patch.object(client, "__file__", "/fixture/grafana/scripts/ci-deploy.py"), patch.dict(os.environ, env, clear=True):
-            with self.assertRaises(SystemExit):
-                client.main()
+        for target in ("server", "asus-server"):
+            env["DEPLOY_TARGET"] = target
+            with self.subTest(target=target), patch.object(client, "__file__", "/fixture/grafana/scripts/ci-deploy.py"), patch.dict(os.environ, env, clear=True):
+                with self.assertRaises(SystemExit):
+                    client.main()
 
     def test_non_sha_is_rejected_before_ssh(self):
         env = self.environment()

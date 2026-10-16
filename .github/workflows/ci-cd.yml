@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [server, hostkey-russia, hostkey-finland, private-test-server, wsl]
+        host: [server, hostkey-russia, hostkey-finland, private-test-server, wsl, asus-server]
     concurrency:
       group: deploy-${{ github.repository }}-${{ matrix.host }}
       cancel-in-progress: false

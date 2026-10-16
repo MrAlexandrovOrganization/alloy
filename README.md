@@ -228,7 +228,7 @@ synthetic positions and private temporary backups. It never touches production.
 in the configured backends. If the Loki Docker alias is not resolvable from the
 host shell, set `LOKI_QUERY_URL` to its tailnet or loopback URL for this check.
 
-Automatic SSH delivery through Hostkey Russia targets all five collectors after
+Automatic SSH delivery through Hostkey Russia targets all six collectors after
 CI validation. It uses separate repository keys, pinned SSH host keys and a
 forced receiver that activates the exact checked commit. `DEPLOY_ENABLED`
 controls activation; [DEPLOY.md](DEPLOY.md) documents bootstrap and recovery.

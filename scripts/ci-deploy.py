@@ -13,6 +13,7 @@ HOSTS = {
     "hostkey-finland": "100.64.0.6",
     "private-test-server": "100.64.0.4",
     "wsl": "100.64.0.3",
+    "asus-server": "100.64.0.11",
 }
 
 

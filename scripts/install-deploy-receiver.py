@@ -6,7 +6,7 @@ if os.geteuid() != 0:
     raise SystemExit('Receiver bootstrap requires root')
 payload = json.load(__import__('sys').stdin)
 config = payload['config']
-if config['host'] not in {'server', 'hostkey-russia', 'hostkey-finland', 'private-test-server', 'wsl'}:
+if config['host'] not in {'server', 'hostkey-russia', 'hostkey-finland', 'private-test-server', 'wsl', 'asus-server'}:
     raise SystemExit('Unknown deploy host')
 expected = {'alloy', 'prometheus', 'loki', 'grafana'} if config['host'] == 'wsl' else {'alloy'}
 if set(config['projects']) != expected or type(config['sudo_make']) is not bool:
@@ -66,7 +66,7 @@ if config['host'] == 'hostkey-russia':
     os.chown(ssh, gateway.pw_uid, gateway.pw_gid)
     gateway_lines = []
     for project, key in payload['keys'].items():
-        addresses = ['100.64.0.1', '100.64.0.3', '100.64.0.4', '100.64.0.5', '100.64.0.6'] if project == 'alloy' else ['100.64.0.3']
+        addresses = ['100.64.0.1', '100.64.0.3', '100.64.0.4', '100.64.0.5', '100.64.0.6', '100.64.0.11'] if project == 'alloy' else ['100.64.0.3']
         options = 'restrict,port-forwarding,' + ','.join(('permitopen="' + address + ':22"' for address in addresses))
         gateway_lines.append(options + ',command="/bin/false" ' + key + ' observability-cd-' + project + '-20261015')
     gateway_auth = ssh / 'authorized_keys'
