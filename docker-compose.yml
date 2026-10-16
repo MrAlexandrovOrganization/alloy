@@ -11,6 +11,7 @@ networks:
 
 services:
   alloy:
+    container_name: "${CONTAINER_NAME_PREFIX:-}alloy"
     image: grafana/alloy:${ALLOY_VERSION:?Run via make}
     restart: unless-stopped
     privileged: true

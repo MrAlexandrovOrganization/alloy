@@ -66,21 +66,21 @@ Canonical values are `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and
 | `notice`, `information`, `informational` | `info` |
 | `critical`, `crit`, `panic`, `emerg`, `emergency`, `alert` | `fatal` |
 
-The following text formats are also parsed, scoped to the deployed container
-names (update the selectors if containers are renamed):
+The following text formats are also parsed, scoped to stable Compose project/service identities (container renames do not
+change the selectors):
 
-| Container | Format / policy |
+| Compose service identity | Format / policy |
 | --- | --- |
-| `egress-router` | sing-box timestamp and explicit severity; INFO `outbound/...: outbound connection to ...` and `inbound/...: inbound connection from/to ...` events become `debug`, with or without a `[connection-id elapsed]` prefix |
-| `kafka-kafka-ui-1` | Java timestamp followed by explicit severity, including `DEBUG` scheduler events |
-| `kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug`; `PeriodicTaskControlManager` reports for `electUnclean`/`electPreferred` become `debug` only when they generated zero records |
-| `redis` | Redis RDB background-save messages (`Saving...`, save start/completion, CoW statistics and `DB saved on disk`) become `debug` |
-| `ollama-ollama-1` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` and `GET /api/tags` probes = `debug` |
-| `stash-postgres-1`, `subscriptions-bot-postgres-1`, `subscription-publisher-postgres-1`, `subscription-catalog-postgres-1` | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
-| `loki-loki-1` | INFO logfmt stats/metric/limited requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups and explicitly listed maintenance/query-start events become `debug` |
-| `telemt` | Rust tracing timestamp, severity and `telemt::...` target; native levels are preserved, including INFO/WARN TLS/SNI rejection events |
+| `egress-router/egress-router` | sing-box timestamp and explicit severity; INFO `outbound/...: outbound connection to ...` and `inbound/...: inbound connection from/to ...` events become `debug`, with or without a `[connection-id elapsed]` prefix |
+| `kafka/kafka-ui` | Java timestamp followed by explicit severity, including `DEBUG` scheduler events |
+| `kafka/kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug`; `PeriodicTaskControlManager` reports for `electUnclean`/`electPreferred` become `debug` only when they generated zero records |
+| `redis/redis` | Redis RDB background-save messages (`Saving...`, save start/completion, CoW statistics and `DB saved on disk`) become `debug` |
+| `ollama/ollama` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` and `GET /api/tags` probes = `debug` |
+| `stash/postgres`, `subscriptions-bot/postgres`, `subscription-publisher/postgres`, `subscription-catalog/postgres` | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
+| `loki/loki` | INFO logfmt stats/metric/limited requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups and explicitly listed maintenance/query-start events become `debug` |
+| `telemt/telemt` | Rust tracing timestamp, severity and `telemt::...` target; native levels are preserved, including INFO/WARN TLS/SNI rejection events |
 
-For `stash-stash-1`, JSON `body` (or `msg` if body is absent/empty) equal to
+For `service="stash/stash"`, JSON `body` (or `msg` if body is absent/empty) equal to
 `embedding backfill: processing` is downgraded from `info` to `debug`. Other
 messages and warning/error levels are unchanged. This is a collector-side rule
 because the deployed backfill implementation is absent from the local checkout.
@@ -269,3 +269,10 @@ reads the runtime root/image metadata through `/proc/PID/root` symlinks.
 It does not write host files or modify the daemon's mount namespace.
 This avoids depending on a hardcoded daemon PID or
 mistaking Ubuntu's empty `/var/lib/docker` for Docker Desktop storage.
+
+## Container names
+
+Compose uses explicit service names without replica numbers. Set
+`CONTAINER_NAME_PREFIX` (for example `dev-`) for an additional local or CI stack
+on the same Docker host. Keep Compose project/service labels and volume names
+unchanged; clients address services or explicit network aliases.
