@@ -16,14 +16,24 @@ if [ "${ALLOY_DOCKER_DESKTOP:-false}" = true ]; then
         echo 'Docker Desktop image metadata is unavailable' >&2
         exit 1
     }
-    # Cross-mount-namespace bind mounts lose the procfs root semantics.
-    # Detach only our private Ubuntu binds and preserve the magic procfs links.
+    # Keep mountpoint directories in the image layer intact: replacing them
+    # with /proc symlinks prevents runc mounting them on a container restart.
+    # Temporary views disappear with this mount namespace, even after SIGKILL.
     umount -l /rootfs
-    rmdir /rootfs
-    ln -s "$runtime_root" /rootfs
+    mount -t tmpfs -o size=1m,mode=755,nodev,nosuid tmpfs /rootfs
+    for entry in "$runtime_root"/* "$runtime_root"/.[!.]* "$runtime_root"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        ln -s "$entry" "/rootfs/${entry##*/}"
+    done
+    ln -s "$runtime_root" /rootfs/.alloy-runtime-root
+    # Statfs('/') must describe the runtime filesystem, not the temporary view.
+    export ALLOY_ROOTFS_PATH=/rootfs/.alloy-runtime-root
     umount -l /var/lib/docker
-    rmdir /var/lib/docker
-    ln -s "$runtime_root/var/lib/docker" /var/lib/docker
+    mount -t tmpfs -o size=1m,mode=755,nodev,nosuid tmpfs /var/lib/docker
+    for entry in "$runtime_root/var/lib/docker"/* "$runtime_root/var/lib/docker"/.[!.]* "$runtime_root/var/lib/docker"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        ln -s "$entry" "/var/lib/docker/${entry##*/}"
+    done
 fi
 
 exec /bin/alloy "$@"

@@ -3,6 +3,7 @@ DOCKER ?= docker
 PRE_COMMIT ?= pre-commit
 NETS = loki-net prometheus-net caddy-metrics-net
 CONFIG ?= config.alloy
+TEST_PATTERN ?= test*.py
 
 -include .env
 ALLOY_HOST ?= $(shell hostname)
@@ -62,10 +63,10 @@ format format-check:
 config-check:
 	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
-	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
+	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e ALLOY_ROOTFS_PATH=/rootfs -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
 
 test:
-	python3 -m unittest discover -s tests -v
+	python3 -m unittest discover -s tests -p "$(TEST_PATTERN)" -v
 
 smoke:
 	python3 scripts/smoke.py

@@ -329,10 +329,20 @@ Desktop set `ALLOY_PROCFS_PATH=/proc` to use the runtime's procfs. These metrics
 describe the Linux runtime, rather than the Windows host.
 Also set `ALLOY_DOCKER_DESKTOP=true`: the startup wrapper finds the current
 host-PID `dockerd`, detaches the collector's private Ubuntu bind mounts and
-reads the runtime root/image metadata through `/proc/PID/root` symlinks.
+builds temporary tmpfs views with `/proc/PID/root` links to runtime directories.
+The underlying mountpoint directories remain intact, so Docker can mount them
+again after graceful restart or SIGKILL. Unix filesystem metrics use a full
+runtime-root link inside that view, rather than reporting its 1MiB tmpfs size.
 It does not write host files or modify the daemon's mount namespace.
 This avoids depending on a hardcoded daemon PID or
 mistaking Ubuntu's empty `/var/lib/docker` for Docker Desktop storage.
+
+To check this platform-specific path explicitly, run `make check
+ALLOY_DOCKER_DESKTOP=true` against the WSL Docker daemon (from this administrative
+Mac, add `DOCKER_HOST=ssh://wsl`). The isolated exporter fixture must still report
+named container memory and the real runtime root filesystem after both Docker
+restart and SIGKILL/start. It does not collect logs or write to central backends.
+Native Linux CI explicitly skips this Docker Desktop-only test.
 
 ## Container names
 

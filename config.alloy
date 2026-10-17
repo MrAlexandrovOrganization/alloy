@@ -296,7 +296,7 @@ loki.write "loki" {
 prometheus.exporter.unix "host" {
 	procfs_path = sys.env("ALLOY_PROCFS_PATH")
 	sysfs_path  = "/sys"
-	rootfs_path = "/rootfs"
+	rootfs_path = sys.env("ALLOY_ROOTFS_PATH")
 }
 
 prometheus.exporter.cadvisor "containers" {
