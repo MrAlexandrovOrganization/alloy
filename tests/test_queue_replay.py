@@ -1,6 +1,7 @@
 """Outage/recreation test with synthetic data and isolated Docker resources only."""
 
 import json
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -11,6 +12,10 @@ import time
 import unittest
 import urllib.parse
 import uuid
+
+spec = importlib.util.spec_from_file_location("queue_migration", Path(__file__).parents[1] / "scripts/migrate-queue.py")
+migration = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(migration)
 
 
 class QueueReplay(unittest.TestCase):
@@ -50,6 +55,8 @@ class QueueReplay(unittest.TestCase):
         self.create_collector()
         self.docker("start", self.agent, self.receiver, self.collector)
         self.wait_for(lambda: self.query('up{job="fixture"}'), "initial delivery")
+        self.assertIn("prometheus_remote_storage_samples_pending{",
+                      migration.read_metrics(self.cli, self.collector))
 
     def cleanup(self):
         for container in (self.collector, self.agent, self.receiver):
