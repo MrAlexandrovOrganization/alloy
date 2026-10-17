@@ -28,14 +28,16 @@ services:
       - -remoteWrite.maxDiskUsagePerURL=${VMAGENT_MAX_DISK_USAGE:-1GiB}
       - -remoteWrite.forcePromProto=true
       - -remoteWrite.queues=1
+      - -remoteWrite.sendTimeout=30s
       - -memory.allowedBytes=32MiB
       - -loggerFormat=json
       - -remoteWrite.keepDanglingQueues=true
     volumes:
       - vmagent_data:/queue
     networks:
-      - collector-queue
-      - prometheus-net
+      collector-queue:
+        aliases: [alloy-queue-sink]
+      prometheus-net: {}
     healthcheck:
       test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8429/health]
       interval: 10s
@@ -67,7 +69,7 @@ services:
     environment:
       ALLOY_HOST: ${ALLOY_HOST:?Run via make}
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
-      PROMETHEUS_REMOTE_WRITE_URL: http://vmagent:8429/api/v1/write
+      PROMETHEUS_REMOTE_WRITE_URL: http://alloy-queue-sink:8429/api/v1/write
       ALLOY_PROCFS_PATH: ${ALLOY_PROCFS_PATH:-/host/proc}
       ALLOY_DOCKER_DESKTOP: ${ALLOY_DOCKER_DESKTOP:-false}
     volumes:

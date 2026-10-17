@@ -33,9 +33,10 @@ class QueueMigration(unittest.TestCase):
     def test_local_queue_does_not_need_to_be_drained_for_restart(self):
         with patch.object(migration.subprocess, "check_output", side_effect=[
             "container\n", self.info("http://vmagent:8429/api/v1/write"),
+            'prometheus_remote_storage_samples_pending{remote_name="central"} 0\n',
         ]) as docker:
             migration.main()
-            self.assertEqual(docker.call_count, 2)
+            self.assertEqual(docker.call_count, 3)  # Only Alloy's first hop is checked.
 
     def test_refuses_to_switch_if_queue_does_not_drain(self):
         pending = 'prometheus_remote_storage_samples_pending{remote_name="central"} 100\n'

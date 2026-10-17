@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drain the old direct-to-central writer before its first switch to vmagent."""
+"""Drain Alloy's first hop before switching/restarting; retain vmagent's backlog."""
 
 import json
 import os
@@ -31,8 +31,11 @@ def main():
         raise SystemExit("Expected exactly one Alloy container")
     info = json.loads(subprocess.check_output(docker + ["inspect", ids[0]], text=True))[0]
     environment = dict(entry.split("=", 1) for entry in info["Config"]["Env"] if "=" in entry)
-    if environment.get("PROMETHEUS_REMOTE_WRITE_URL") == "http://vmagent:8429/api/v1/write":
-        print("Local queue already configured; preserving both state volumes")
+    local = environment.get("PROMETHEUS_REMOTE_WRITE_URL") in {
+        "http://vmagent:8429/api/v1/write", "http://alloy-queue-sink:8429/api/v1/write",
+    }
+    if local and not info["State"]["Running"]:
+        print("Restoring stopped local collector; preserving both state volumes")
         return
     if not info["State"]["Running"]:
         raise SystemExit("Old direct writer is stopped; restore and drain it before switching")
@@ -42,10 +45,10 @@ def main():
                    if line.startswith(tuple("prometheus_remote_storage_" + kind + "_pending{"
                                             for kind in ("samples", "histograms", "exemplars")))]
         if pending and sum(pending) == 0:
-            print("Old direct writer drained; existing Alloy WAL and log positions are retained")
+            print("Alloy first hop drained; existing WAL, log positions and vmagent backlog are retained")
             return
         time.sleep(2)
-    raise SystemExit("Old writer has pending samples; refusing to restart it or change destination")
+    raise SystemExit("Alloy first hop has pending samples; refusing to restart it or change destination")
 
 
 if __name__ == "__main__":

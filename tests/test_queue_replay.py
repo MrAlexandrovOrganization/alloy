@@ -27,10 +27,12 @@ class QueueReplay(unittest.TestCase):
         compose = shlex.split(os.environ.get("DOCKER_COMPOSE", "docker compose"))
         config = json.loads(subprocess.check_output(compose + ["config", "--format", "json"]))
         self.vm = config["services"]["vmagent"]
+        self.local_url = config["services"]["alloy"]["environment"]["PROMETHEUS_REMOTE_WRITE_URL"]
         self.alloy_image = config["services"]["alloy"]["image"]
         self.prom_image = "prom/prometheus:" + os.environ["TEST_PROMETHEUS_VERSION"]
         self.prefix = "alloy-queue-test-" + uuid.uuid4().hex[:12]
         self.network = self.prefix + "-net"
+        self.egress = self.prefix + "-egress"
         self.agent = self.prefix + "-vmagent"
         self.collector = self.prefix + "-alloy"
         self.receiver = self.prefix + "-prometheus"
@@ -38,6 +40,7 @@ class QueueReplay(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.cleanup)
         self.docker("network", "create", "--internal", self.network)
+        self.docker("network", "create", "--internal", self.egress)
         for volume in self.volumes:
             self.docker("volume", "create", volume)
         self.docker("run", "--rm", "--network", "none", "--entrypoint", "sh",
@@ -46,7 +49,7 @@ class QueueReplay(unittest.TestCase):
         self.create_agent()
         self.write_config("prometheus.yml", "global:\n  scrape_interval: 1s\nscrape_configs: []\n"
                           "storage:\n  tsdb:\n    out_of_order_time_window: 26h\n")
-        self.docker("create", "--name", self.receiver, "--network", self.network,
+        self.docker("create", "--name", self.receiver, "--network", self.egress,
                     "--network-alias", "receiver", "-v", self.volumes[2] + ":/prometheus",
                     self.prom_image, "--config.file=/etc/prometheus/prometheus.yml",
                     "--web.enable-remote-write-receiver")
@@ -64,6 +67,7 @@ class QueueReplay(unittest.TestCase):
         for volume in self.volumes:
             subprocess.run(self.cli + ["volume", "rm", volume], capture_output=True)
         subprocess.run(self.cli + ["network", "rm", self.network], capture_output=True)
+        subprocess.run(self.cli + ["network", "rm", self.egress], capture_output=True)
         self.tmp.cleanup()
 
     def write_config(self, name, content):
@@ -71,32 +75,35 @@ class QueueReplay(unittest.TestCase):
         path.write_text(content)
         path.chmod(0o644)  # Synthetic config must be readable by the non-root receiver.
 
-    def create_agent(self):
+    def create_agent(self, connect_egress=True):
         command = ["-remoteWrite.url=http://receiver:9090/api/v1/write" if arg.startswith("-remoteWrite.url=")
                    else arg for arg in self.vm["command"]]
         self.docker("create", "--name", self.agent, "--network", self.network,
-                    "--network-alias", "vmagent", "--user", self.vm["user"],
+                    "--network-alias", "vmagent", "--network-alias", "alloy-queue-sink", "--user", self.vm["user"],
                     "--read-only", "--tmpfs", "/tmp", "--cap-drop", "ALL",
                     "--security-opt", "no-new-privileges", "-v", self.volumes[0] + ":/queue",
                     self.vm["image"], *command)
+        if connect_egress:
+            self.docker("network", "connect", "--alias", "vmagent", self.egress, self.agent)
 
     def create_collector(self):
         self.write_config("config.alloy", '''prometheus.scrape "fixture" {
-  targets = [{"__address__" = "vmagent:8429"}]
+  targets = [{"__address__" = "alloy-queue-sink:8429"}]
   job_name = "fixture"
   scrape_interval = "1s"
   scrape_timeout = "1s"
   forward_to = [prometheus.remote_write.central.receiver]
 }
 prometheus.remote_write "central" {
-  endpoint { url = "http://vmagent:8429/api/v1/write" }
+  endpoint { url = "LOCAL_QUEUE_URL" }
 }
-''')
+'''.replace("LOCAL_QUEUE_URL", self.local_url))
         self.docker("create", "--name", self.collector, "--network", self.network,
                     "-v", self.volumes[1] + ":/state", self.alloy_image, "run",
                     "--storage.path=/state", "/etc/alloy/config.alloy")
         self.docker("cp", str(Path(self.tmp.name) / "config.alloy"),
                     self.collector + ":/etc/alloy/config.alloy")
+        self.docker("network", "connect", self.egress, self.collector)
 
     def get(self, url):
         return self.docker("exec", self.agent, "wget", "-q", "-T", "3", "-O", "-", url,
@@ -119,7 +126,9 @@ prometheus.remote_write "central" {
         self.fail("Timed out waiting for " + description)
 
     def test_offline_samples_survive_recreation_of_both_processes(self):
-        self.docker("stop", "-t", "30", self.receiver)
+        # Both processes share an egress network too, as in production. The
+        # private-only alias must keep the first hop working after its removal.
+        self.docker("network", "disconnect", self.egress, self.agent)
         offline_start = time.time()
         old_ms = int((offline_start - 23 * 3600) * 1000)
         # Explicit old timestamps exercise the receiver's out-of-bounds window.
@@ -142,11 +151,11 @@ prometheus.remote_write "central" {
             state = json.loads(self.docker("inspect", container))[0]["State"]
             self.assertEqual(state["ExitCode"], 0, "graceful stop must finish before timeout")
             self.docker("rm", container)
-        self.create_agent()
+        self.create_agent(connect_egress=False)
         self.create_collector()
         self.docker("start", self.agent, self.collector)
         self.wait_for(disk_pending, "reopened backlog while receiver is still offline")
-        self.docker("start", self.receiver)
+        self.docker("network", "connect", "--alias", "vmagent", self.egress, self.agent)
 
         old = self.wait_for(lambda: self.query('queue_durability_probe{case="day-old"}[26h]'),
                             "day-old sample after recreation")

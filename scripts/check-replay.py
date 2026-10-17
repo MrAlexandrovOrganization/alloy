@@ -3,6 +3,8 @@
 
 import json
 import os
+from pathlib import Path
+import runpy
 import shlex
 import subprocess
 import time
@@ -46,6 +48,14 @@ def main():
         return sum(float(line.rsplit(" ", 1)[1]) for line in metrics.splitlines()
                    if line.startswith("vm_persistentqueue_bytes_pending{"))
 
+    read_metrics = runpy.run_path(str(Path(__file__).with_name("migrate-queue.py")))["read_metrics"]
+
+    def first_hop_drained():
+        metrics = read_metrics(docker, collector)
+        values = [float(line.rsplit(" ", 1)[1]) for line in metrics.splitlines()
+                  if line.startswith("prometheus_remote_storage_samples_pending{")]
+        return values and sum(values) == 0
+
     disconnected = False
     try:
         run("network", "disconnect", network, agent)
@@ -57,9 +67,15 @@ def main():
         before = source_timestamp(probe_time)
         if before is not None and before >= offline_start + 5:
             raise SystemExit("Receiver still got offline samples; fault isolation was ineffective")
-        queued = pending()
-        if queued <= 0:
-            raise SystemExit("No file-backed backlog; refusing an inconclusive restart test")
+        deadline = time.monotonic() + 90
+        queued = 0
+        while time.monotonic() < deadline:
+            queued = pending()
+            if queued > 0 and first_hop_drained():
+                break
+            time.sleep(2)
+        else:
+            raise SystemExit("File-backed backlog or drained first hop not confirmed; refusing restart")
         for container in (collector, agent):
             run("restart", "-t", "60", container)
         print(f"{host}: both processes restarted with {int(queued)} queued bytes; restoring egress", flush=True)

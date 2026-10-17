@@ -212,32 +212,38 @@ metrics are intentionally outside this configuration.
 
 Metrics follow `Alloy -> local vmagent -> central Prometheus on WSL`.
 `PROMETHEUS_REMOTE_WRITE_URL` in the host's `.env` is the **central** destination
-for vmagent. Compose always directs Alloy to `http://vmagent:8429/api/v1/write`.
+for vmagent. Compose directs Alloy to `http://alloy-queue-sink:8429/api/v1/write`.
+That alias exists only on the private collector network: removing vmagent's
+egress network must not invalidate Alloy's cached first-hop connection.
 vmagent has no published host port; it uses a private collector network and the
 existing trusted `prometheus-net` for outbound access. HTTP remote write is used
 because both collectors and the central Prometheus implement that protocol.
 
 `prometheus.remote_write.central`, its WAL and Docker log positions retain their
-existing component IDs and `observability_alloy_data` volume. The first switch
-requires a running old collector with zero pending samples; `migrate-queue.py`
+existing component IDs and `observability_alloy_data` volume. Updates first
+start a healthy local queue and wait for a running Alloy's first-hop samples to
+drain; vmagent's persistent backlog does not need to drain. `migrate-queue.py`
 refuses to switch an undrained/stopped direct writer. Existing state is never
 cleared or converted. vmagent uses a separate `observability_vmagent_data` volume
 mounted at `/queue`, running as UID/GID 65534 with a read-only root filesystem.
 `queue-init` gives that UID ownership of the volume root without rewriting files.
 
 vmagent retries its file-backed backlog after a graceful restart or container
-recreation. A 60s stop timeout permits its in-memory tail to flush. This does not
+recreation. A 30s send deadline and 60s stop timeout leave room for its in-memory
+tail to flush during shutdown. This does not
 promise zero loss on SIGKILL, OOM, power loss or disk failure. Alloy's own WAL
 still cannot replay reliably after its restart: samples not yet accepted by a
 running local vmagent are outside the queue's restart guarantee. Logs retain
 their existing pipeline, retries and one-hour age filter.
 
-`VMAGENT_MAX_DISK_USAGE` bounds bytes **per central URL**, rather than setting a
+`VMAGENT_MAX_DISK_USAGE` bounds pending bytes **per central URL**, rather than setting a
 24h TTL. At capacity the oldest queued blocks are dropped. Initial host budgets
 are 6GiB on server, 3GiB on WSL, 1GiB on Russia/Finland/ASUS and 600MiB on
 private-test-server. The latter has little free disk and needs extra care when
 its workload increases. The default is 1GiB; set the host override in `.env`.
-vmagent's memory limit defaults to 128m. Preserve both volumes during updates.
+vmagent's memory limit defaults to 128m. Physical files can additionally retain
+part of a consumed chunk (about 512MiB); leave that and OS headroom beyond the
+pending-byte budget, especially on private-test-server. Preserve both volumes.
 
 Alloy scrapes vmagent as `job="vmagent"`, with the same `host` and
 `service="vmagent"`. Recalculate a day of traffic with
@@ -265,15 +271,17 @@ blindly overwrite it. `make test` verifies this using isolated Docker containers
 synthetic positions and private temporary backups. It never touches production.
 
 `make test` also exercises a real isolated Alloy/vmagent/Prometheus chain: it
-stops the receiver, waits for a file-backed backlog, gracefully recreates both
+disconnects vmagent's egress while retaining its private first hop, waits for
+a file-backed backlog, gracefully recreates both
 collector processes with their volumes, restores the receiver and checks original
 offline scrape timestamps plus a synthetic 23h-old sample. This is not a 24h soak
 test or a power-failure test. Fixtures publish no ports and delete only their own
 uniquely named containers, volumes and internal network.
 
 `make replay-check` is an explicit **live fault test**, excluded from check/CI/CD.
-It disconnects only vmagent from `prometheus-net` for 35s, requires actual queued
-bytes and missing offline samples at the receiver, restarts Alloy and vmagent,
+It disconnects only vmagent from `prometheus-net` for at least 35s, waits for
+file-backed bytes and a drained Alloy first hop, checks missing offline samples
+at the receiver, restarts Alloy and vmagent,
 restores network aliases in a `finally` block, then verifies arrival of an
 original offline scrape timestamp. It does not modify host routes or SSH.
 Run it with the host's Make environment and keep an administrative connection

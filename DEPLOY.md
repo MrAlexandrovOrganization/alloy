@@ -62,8 +62,9 @@ on Hostkey Russia/Finland), keeping local `.env` and named volumes.
 `make deploy` prepares the non-root queue volume, updates vmagent and waits for
 its health before recreating Alloy, so single-file binds cannot keep a stale
 inode. Both named state volumes are retained; vmagent gets 60s for graceful
-shutdown. The first switch checks that the old direct writer is running and
-drained. Later recreations retain vmagent's backlog. Alloy still first checks
+shutdown. Running Alloy's first hop must drain before recreation, while
+vmagent's disk backlog is retained. A stopped direct writer blocks the first
+switch. Alloy still first checks
 central Prometheus/Loki readiness, keeping logs and the first-hop WAL safe during
 a backend outage. On WSL set Alloy's private
 `PROMETHEUS_QUERY_URL=http://127.0.0.1:9090` and `LOKI_QUERY_URL` for host-side

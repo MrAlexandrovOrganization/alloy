@@ -10,8 +10,7 @@ MONITORING_DATA_DIR ?= $(HOME)/.monitoring
 export
 include makefiles/versions.mk
 
-up: init migrate-state queue-init
-	python3 scripts/migrate-queue.py
+up: prepare-collectors
 	$(DOCKER_COMPOSE) up -d
 
 init: network directories
@@ -32,6 +31,11 @@ migrate-state:
 queue-init:
 	$(DOCKER) volume create observability_vmagent_data >/dev/null
 	$(DOCKER) run --rm --network none --read-only --user 0 --cap-drop ALL --cap-add CHOWN --security-opt no-new-privileges --entrypoint sh -v observability_vmagent_data:/queue victoriametrics/vmagent:$(VMAGENT_VERSION) -c 'chown 65534:65534 /queue'
+
+prepare-collectors: init queue-init
+	$(DOCKER_COMPOSE) up -d --wait --wait-timeout 90 vmagent
+	python3 scripts/migrate-queue.py
+	$(MAKE) migrate-state
 
 down:
 	$(DOCKER_COMPOSE) down
@@ -78,14 +82,12 @@ install-hooks:
 migrate-hooks:
 	@sh scripts/install-hooks.sh migrate
 
-.PHONY: up down logs init network directories migrate-state queue-init format format-check config-check test smoke replay-check check install-hooks migrate-hooks
+.PHONY: up down logs init network directories migrate-state queue-init prepare-collectors format format-check config-check test smoke replay-check check install-hooks migrate-hooks
 
 .PHONY: versions recreate
 versions:
 	@$(foreach v,$(VERSION_VARS),printf '%s=%s\n' '$(v)' '$($(v))';)
-recreate: init migrate-state queue-init
-	python3 scripts/migrate-queue.py
-	$(DOCKER_COMPOSE) up -d --wait --wait-timeout 90 vmagent
+recreate: prepare-collectors
 	$(DOCKER_COMPOSE) up -d --force-recreate alloy
 
 include makefiles/ci-deploy.mk
