@@ -10,7 +10,8 @@ MONITORING_DATA_DIR ?= $(HOME)/.monitoring
 export
 include makefiles/versions.mk
 
-up: init migrate-state
+up: init migrate-state queue-init
+	python3 scripts/migrate-queue.py
 	$(DOCKER_COMPOSE) up -d
 
 init: network directories
@@ -28,6 +29,10 @@ directories:
 migrate-state:
 	python3 scripts/migrate-state.py
 
+queue-init:
+	$(DOCKER) volume create observability_vmagent_data >/dev/null
+	$(DOCKER) run --rm --network none --read-only --user 0 --cap-drop ALL --cap-add CHOWN --security-opt no-new-privileges --entrypoint sh -v observability_vmagent_data:/queue victoriametrics/vmagent:$(VMAGENT_VERSION) -c 'chown 65534:65534 /queue'
+
 down:
 	$(DOCKER_COMPOSE) down
 
@@ -36,7 +41,7 @@ logs:
 
 format format-check:
 	@set -eu; \
-	image=$$($(DOCKER_COMPOSE) config --images alloy); \
+	image=grafana/alloy:$(ALLOY_VERSION); \
 	formatted=$$(mktemp); \
 	trap 'rm -f "$$formatted"' EXIT; \
 	trap 'exit 1' HUP INT TERM; \
@@ -61,6 +66,10 @@ test:
 smoke:
 	python3 scripts/smoke.py
 
+# Explicit live fault injection; never run automatically from CI/deploy/check.
+replay-check:
+	python3 scripts/check-replay.py
+
 check: format-check config-check test
 
 install-hooks:
@@ -69,12 +78,14 @@ install-hooks:
 migrate-hooks:
 	@sh scripts/install-hooks.sh migrate
 
-.PHONY: up down logs init network directories migrate-state format format-check config-check test smoke check install-hooks migrate-hooks
+.PHONY: up down logs init network directories migrate-state queue-init format format-check config-check test smoke replay-check check install-hooks migrate-hooks
 
 .PHONY: versions recreate
 versions:
 	@$(foreach v,$(VERSION_VARS),printf '%s=%s\n' '$(v)' '$($(v))';)
-recreate: init migrate-state
+recreate: init migrate-state queue-init
+	python3 scripts/migrate-queue.py
+	$(DOCKER_COMPOSE) up -d --wait --wait-timeout 90 vmagent
 	$(DOCKER_COMPOSE) up -d --force-recreate alloy
 
 include makefiles/ci-deploy.mk

@@ -1,4 +1,6 @@
 networks:
+  collector-queue:
+    internal: true
   loki-net:
     external: true
     name: loki-net
@@ -10,6 +12,45 @@ networks:
     name: caddy-metrics-net
 
 services:
+  vmagent:
+    container_name: "${CONTAINER_NAME_PREFIX:-}alloy-vmagent"
+    image: victoriametrics/vmagent:${VMAGENT_VERSION:?Run via make}
+    user: "65534:65534"
+    restart: unless-stopped
+    stop_grace_period: 60s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - -httpListenAddr=:8429
+      - -remoteWrite.url=${PROMETHEUS_REMOTE_WRITE_URL:?Set the central receiver URL}
+      - -remoteWrite.tmpDataPath=/queue
+      - -remoteWrite.maxDiskUsagePerURL=${VMAGENT_MAX_DISK_USAGE:-1GiB}
+      - -remoteWrite.forcePromProto=true
+      - -remoteWrite.queues=1
+      - -memory.allowedBytes=32MiB
+      - -loggerFormat=json
+      - -remoteWrite.keepDanglingQueues=true
+    volumes:
+      - vmagent_data:/queue
+    networks:
+      - collector-queue
+      - prometheus-net
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8429/health]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    extends:
+      file: docker-compose.base.yml
+      service: base
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: ${VMAGENT_MEMORY_LIMIT:-128m}
+
   alloy:
     container_name: "${CONTAINER_NAME_PREFIX:-}alloy"
     image: grafana/alloy:${ALLOY_VERSION:?Run via make}
@@ -26,7 +67,7 @@ services:
     environment:
       ALLOY_HOST: ${ALLOY_HOST:?Run via make}
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
-      PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:?Set the central receiver URL}
+      PROMETHEUS_REMOTE_WRITE_URL: http://vmagent:8429/api/v1/write
       ALLOY_PROCFS_PATH: ${ALLOY_PROCFS_PATH:-/host/proc}
       ALLOY_DOCKER_DESKTOP: ${ALLOY_DOCKER_DESKTOP:-false}
     volumes:
@@ -40,9 +81,13 @@ services:
       - /var/lib/docker:/var/lib/docker:ro
       - ${MONITORING_DATA_DIR:?Run via make}/prometheus-targets:/etc/alloy/targets:ro
     networks:
+      - collector-queue
       - loki-net
       - prometheus-net
       - caddy-metrics-net
+    depends_on:
+      vmagent:
+        condition: service_healthy
     extends:
       file: docker-compose.base.yml
       service: base
@@ -53,5 +98,7 @@ services:
           memory: ${ALLOY_MEMORY_LIMIT:-512m}
 
 volumes:
+  vmagent_data:
+    name: observability_vmagent_data
   alloy_data:
     name: observability_alloy_data

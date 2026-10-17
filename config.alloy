@@ -418,6 +418,13 @@ prometheus.scrape "self" {
 	forward_to      = [prometheus.remote_write.central.receiver]
 }
 
+prometheus.scrape "queue" {
+	targets         = [{"__address__" = "vmagent:8429", "instance" = sys.env("ALLOY_HOST"), "service" = "vmagent"}]
+	job_name        = "vmagent"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.central.receiver]
+}
+
 prometheus.remote_write "central" {
 	external_labels = {host = sys.env("ALLOY_HOST")}
 

@@ -2,8 +2,9 @@
 
 ## Image version
 
-The Alloy image version lives in `makefiles/versions.mk`. `make versions` prints it.
-Compose, formatting checks and CI all use this value through Make. Use
+Alloy, vmagent and the isolated test receiver versions live in
+`makefiles/versions.mk`. `make versions` prints them.
+Compose, formatting checks and CI use these values through Make. Use
 `make up` or `make recreate` to activate configuration/image changes.
 
 ## Host identity and persistent state
@@ -209,11 +210,50 @@ All metrics carry `host`, and node/container/service targets include `service`.
 The Docker Desktop deployment on WSL reports the Linux Docker runtime; Windows
 metrics are intentionally outside this configuration.
 
-`prometheus.remote_write.central` stores its WAL under the same persistent
-storage path as log positions. Unsent samples expire after 24h; acknowledged
-samples are cleaned by segment compaction (hourly, minimum age 5m). This is a
-bounded retry buffer, not a guarantee for outages longer than a day or a full disk.
-Logs retain the existing pipeline, retries and one-hour age filter.
+Metrics follow `Alloy -> local vmagent -> central Prometheus on WSL`.
+`PROMETHEUS_REMOTE_WRITE_URL` in the host's `.env` is the **central** destination
+for vmagent. Compose always directs Alloy to `http://vmagent:8429/api/v1/write`.
+vmagent has no published host port; it uses a private collector network and the
+existing trusted `prometheus-net` for outbound access. HTTP remote write is used
+because both collectors and the central Prometheus implement that protocol.
+
+`prometheus.remote_write.central`, its WAL and Docker log positions retain their
+existing component IDs and `observability_alloy_data` volume. The first switch
+requires a running old collector with zero pending samples; `migrate-queue.py`
+refuses to switch an undrained/stopped direct writer. Existing state is never
+cleared or converted. vmagent uses a separate `observability_vmagent_data` volume
+mounted at `/queue`, running as UID/GID 65534 with a read-only root filesystem.
+`queue-init` gives that UID ownership of the volume root without rewriting files.
+
+vmagent retries its file-backed backlog after a graceful restart or container
+recreation. A 60s stop timeout permits its in-memory tail to flush. This does not
+promise zero loss on SIGKILL, OOM, power loss or disk failure. Alloy's own WAL
+still cannot replay reliably after its restart: samples not yet accepted by a
+running local vmagent are outside the queue's restart guarantee. Logs retain
+their existing pipeline, retries and one-hour age filter.
+
+`VMAGENT_MAX_DISK_USAGE` bounds bytes **per central URL**, rather than setting a
+24h TTL. At capacity the oldest queued blocks are dropped. Initial host budgets
+are 6GiB on server, 3GiB on WSL, 1GiB on Russia/Finland/ASUS and 600MiB on
+private-test-server. The latter has little free disk and needs extra care when
+its workload increases. The default is 1GiB; set the host override in `.env`.
+vmagent's memory limit defaults to 128m. Preserve both volumes during updates.
+
+Alloy scrapes vmagent as `job="vmagent"`, with the same `host` and
+`service="vmagent"`. Recalculate a day of traffic with
+`sum by(host)(rate(vmagent_remotewrite_bytes_sent_total[1h])) * 86400`, allow
+headroom, and compare it to the byte limit and real free disk. Track
+`vm_persistentqueue_bytes_pending`, `vm_persistentqueue_free_disk_space_bytes`,
+`vm_persistentqueue_bytes_dropped_total` and remote-write failures. A full disk,
+growing workload or outage beyond the budget can cause loss. Docker Desktop's
+virtual filesystem free space is not the Windows drive's physical free space.
+
+Prometheus must accept delayed samples with `storage.tsdb.out_of_order_time_window:
+26h` while retaining its 15d history. It may reject older backlog. Queue identity
+depends on the destination URL and its ordering: keep them stable. The
+`keepDanglingQueues` option preserves old queue directories on URL changes but
+does not automatically send them to a different destination; drain before moving
+the receiver, or restore the previous URL to deliver that queue.
 
 `make up` / `make recreate` first run `migrate-state`. If the existing container
 uses the legacy implicit `/data-alloy` path, migration refuses a non-empty target
@@ -224,7 +264,22 @@ are retained. Review a partial target volume manually before retrying, never
 blindly overwrite it. `make test` verifies this using isolated Docker containers,
 synthetic positions and private temporary backups. It never touches production.
 
-`make smoke` explicitly verifies node/cAdvisor/self metrics and Docker log arrival
+`make test` also exercises a real isolated Alloy/vmagent/Prometheus chain: it
+stops the receiver, waits for a file-backed backlog, gracefully recreates both
+collector processes with their volumes, restores the receiver and checks original
+offline scrape timestamps plus a synthetic 23h-old sample. This is not a 24h soak
+test or a power-failure test. Fixtures publish no ports and delete only their own
+uniquely named containers, volumes and internal network.
+
+`make replay-check` is an explicit **live fault test**, excluded from check/CI/CD.
+It disconnects only vmagent from `prometheus-net` for 35s, requires actual queued
+bytes and missing offline samples at the receiver, restarts Alloy and vmagent,
+restores network aliases in a `finally` block, then verifies arrival of an
+original offline scrape timestamp. It does not modify host routes or SSH.
+Run it with the host's Make environment and keep an administrative connection
+available for recovery if the test process itself is killed while disconnected.
+
+`make smoke` verifies fresh node/cAdvisor/self/vmagent metrics and Docker log arrival
 in the configured backends. If the Loki Docker alias is not resolvable from the
 host shell, set `LOKI_QUERY_URL` to its tailnet or loopback URL for this check.
 
@@ -250,7 +305,8 @@ support for Docker's containerd image store. The former v1.7.1 failed the
 outage/restart replay test and could not read container metrics on new hosts.
 The outage plus collector restart test also failed on v1.20.1: do not assume
 that retained WAL samples will be resent after the Alloy process restarts.
-The 24h buffer covers receiver/network outages while the collector keeps running.
+The local vmagent queue provides restart replay for samples it has accepted;
+Alloy's WAL is only the first hop to that local queue.
 Keep a cold snapshot of the complete Alloy volume before an upgrade; do not
 change component IDs or clear the volume. Explicit relabeling keeps the `node`
 and `cadvisor` jobs stable instead of exporter-generated `integrations/*` names.

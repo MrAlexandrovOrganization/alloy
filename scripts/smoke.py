@@ -20,10 +20,15 @@ loki = os.environ.get("LOKI_QUERY_URL") or os.environ["LOKI_PUSH_URL"].rsplit(
     "/loki/api/v1/push", 1
 )[0]
 selector = "host=" + json.dumps(host)
+started = time.time()
 for attempt in range(12):
     try:
         metrics = query(prometheus + "/api/v1/query", "up{" + selector + "}")
         healthy = {m["metric"]["job"] for m in metrics if float(m["value"][1]) == 1}
+        fresh = query(
+            prometheus + "/api/v1/query", "timestamp(up{" + selector + "} == 1)",
+        )
+        current = {m["metric"]["job"] for m in fresh if float(m["value"][1]) >= started}
         containers = query(
             prometheus + "/api/v1/query",
             'container_memory_usage_bytes{job="cadvisor",name!="",' + selector + "}",
@@ -34,8 +39,8 @@ for attempt in range(12):
             start=int((time.time() - 900) * 1e9),
             limit=1,
         )
-        if {"node", "cadvisor", "alloy"} <= healthy and containers and logs:
-            print(f"Delivery verified for {host}: node, cadvisor, alloy and Docker logs")
+        if {"node", "cadvisor", "alloy", "vmagent"} <= healthy & current and containers and logs:
+            print(f"Fresh delivery verified for {host}: node, cadvisor, alloy, vmagent and Docker logs")
             break
     except (OSError, ValueError, KeyError):
         pass

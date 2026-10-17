@@ -59,12 +59,17 @@ rejects a workflow if remote main no longer equals its checked SHA, and permits
 only a fast-forward update. It then calls `make deploy` (through root Make only
 on Hostkey Russia/Finland), keeping local `.env` and named volumes.
 
-`make deploy` recreates the service so single-file configuration bind mounts
-cannot keep a stale inode, then runs readiness/delivery checks. Alloy first
-checks central Prometheus/Loki readiness: a receiver outage must not cause a
-collector restart and loss of the unsent queue. On WSL set Alloy's private
+`make deploy` prepares the non-root queue volume, updates vmagent and waits for
+its health before recreating Alloy, so single-file binds cannot keep a stale
+inode. Both named state volumes are retained; vmagent gets 60s for graceful
+shutdown. The first switch checks that the old direct writer is running and
+drained. Later recreations retain vmagent's backlog. Alloy still first checks
+central Prometheus/Loki readiness, keeping logs and the first-hop WAL safe during
+a backend outage. On WSL set Alloy's private
 `PROMETHEUS_QUERY_URL=http://127.0.0.1:9090` and `LOKI_QUERY_URL` for host-side
-checks; runtime remote_write still uses the Docker alias.
+checks; vmagent's central destination still uses the Docker alias, while Alloy
+always writes to the local vmagent alias. Host-specific queue byte budgets and
+their limits are documented in README; host `.env` files remain private.
 
 Only successful activation and checks write a receipt with current/previous SHA
 to `~maxim/.local/state/observability-deploy/<project>.json`. A failed deployment
