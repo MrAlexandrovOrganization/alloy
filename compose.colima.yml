@@ -1,0 +1,55 @@
+# Optional transport for Colima, which does not inherit the Mac's VPN routes.
+# Select with COMPOSE_FILE=docker-compose.yml:compose.colima.yml in .env.
+services:
+  collector-tailnet:
+    container_name: "${CONTAINER_NAME_PREFIX:-}alloy-tailnet"
+    image: tailscale/tailscale:${TAILSCALE_VERSION:?Run via make}
+    restart: unless-stopped
+    environment:
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_AUTH_ONCE: "true"
+      TS_EXTRA_ARGS: --login-server=${HEADSCALE_URL:?Set Headscale URL} --hostname=${ALLOY_HOST:?Run via make}-observability --accept-dns=false --accept-routes=false --shields-up
+    volumes:
+      - collector_tailnet:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add: [NET_ADMIN, NET_RAW]
+    healthcheck:
+      test: [CMD-SHELL, "tailscale status --json | grep -q '\"BackendState\": \"Running\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      collector-queue:
+        aliases: [alloy-queue-sink]
+      prometheus-net: {}
+      loki-net: {}
+      caddy-metrics-net: {}
+    extends:
+      file: docker-compose.base.yml
+      service: base
+    deploy:
+      resources:
+        limits: {cpus: "0.2", memory: 256m}
+
+  vmagent:
+    networks: !reset []
+    network_mode: service:collector-tailnet
+    depends_on:
+      collector-tailnet:
+        condition: service_healthy
+        restart: true
+
+  alloy:
+    networks: !reset []
+    network_mode: service:collector-tailnet
+    depends_on:
+      collector-tailnet:
+        condition: service_healthy
+        restart: true
+
+volumes:
+  collector_tailnet:
+    name: observability_alloy_tailnet

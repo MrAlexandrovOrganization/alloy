@@ -14,6 +14,10 @@ include makefiles/versions.mk
 up: prepare-collectors
 	$(DOCKER_COMPOSE) up -d
 
+# Bootstrap the optional Colima VPN before its initial device registration.
+tailnet-up: init
+	$(DOCKER_COMPOSE) up -d collector-tailnet
+
 init: network directories
 
 network:
@@ -63,6 +67,7 @@ format format-check:
 config-check:
 	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
+	HEADSCALE_URL=https://headscale.invalid COMPOSE_FILE=docker-compose.yml:compose.colima.yml $(DOCKER_COMPOSE) config -q
 	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e ALLOY_ROOTFS_PATH=/rootfs -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
 
 test:
@@ -83,7 +88,7 @@ install-hooks:
 migrate-hooks:
 	@sh scripts/install-hooks.sh migrate
 
-.PHONY: up down logs init network directories migrate-state queue-init prepare-collectors format format-check config-check test smoke replay-check check install-hooks migrate-hooks
+.PHONY: up tailnet-up down logs init network directories migrate-state queue-init prepare-collectors format format-check config-check test smoke replay-check check install-hooks migrate-hooks
 
 .PHONY: versions recreate
 versions:

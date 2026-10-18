@@ -344,6 +344,65 @@ named container memory and the real runtime root filesystem after both Docker
 restart and SIGKILL/start. It does not collect logs or write to central backends.
 Native Linux CI explicitly skips this Docker Desktop-only test.
 
+## MacBook containers in Colima
+
+Select the optional transport in the Mac's private `.env`:
+
+```dotenv
+ALLOY_HOST=macbook-pro-m3
+MONITORING_DATA_DIR=/Users/mrralexandrov/.monitoring
+COMPOSE_FILE=docker-compose.yml:compose.colima.yml
+HEADSCALE_URL=https://headscale.mralexandrov.duckdns.org
+QUERY_CONTAINER=alloy-tailnet
+ALLOY_PROCFS_PATH=/host/proc
+ALLOY_DOCKER_DESKTOP=false
+```
+
+Keep the central receiver URLs from `.env.example`. Docker Compose >= 2.24.4
+is required for the network reset in the override. `make config-check` validates
+both the default and Colima configurations; the override is never enabled on
+other hosts automatically.
+
+`make tailnet-up` starts only the optional Tailscale container. Authenticate this
+new Headscale device once with an administrator-issued, single-use, short-lived
+key. Supply it through a mode-600 temporary file inside `alloy-tailnet` and
+`tailscale up --auth-key=file:/path/to/file`, with the same login server,
+hostname, DNS/routes and shields-up flags as the Compose configuration. Remove
+the temporary file after authentication. Never put the key in `.env`, command
+arguments, logs or Git. Identity survives recreation in the private
+`observability_alloy_tailnet` volume. Treat this volume as a credential.
+
+After registration, `make up` starts Alloy and its persistent vmagent queue.
+`make smoke` and deployment readiness probes use `docker exec alloy-tailnet wget`
+when `QUERY_CONTAINER` is set, so the Mac shell needs no VPN route. `make down`
+removes the three collector containers while keeping all state volumes. Normal
+container restart policies start them again when Colima/Docker starts.
+
+Tailscale runs only inside Colima. Alloy and vmagent share its container network
+namespace, with no published host ports. The sidecar accepts neither DNS nor
+subnet routes, uses no exit node, and blocks incoming tailnet connections with
+shields-up. It does not install a macOS VPN client or change macOS routing/DNS.
+Worker containers retain their own networks. As on the Linux collectors,
+Alloy remains a privileged collector with read access to Docker/runtime data;
+Tailscale has NET_ADMIN/NET_RAW only in its own network namespace.
+
+Direct UDP tests found destination-dependent port mappings in Colima's default
+network path: native macOS and WSL exchanged packets directly, while Colima and
+WSL did not. Tailscale still prefers direct connections where possible. The
+Headscale relay map supplies the self-hosted `hostkey-russia` region 900 as the
+fallback, with external Tailscale relay maps disabled. No client-side foreign
+region preference or custom Tailscale startup wrapper is required. The
+persistent vmagent queue retains samples during temporary receiver or transport
+failures; its byte limit is not a duration guarantee.
+
+Container metrics use `host` and `instance` = `macbook-pro-m3`, with the same
+Compose-based service labels as other hosts. The existing Cadvisor exporter
+dashboard discovers the new instance automatically. Embedded node metrics
+describe Colima's Linux VM (8 CPUs/18 GiB at initial setup), not native macOS
+resource usage. CPU rates need at least two 15-second scrapes before appearing.
+This local Mac bootstrap is outside the six-host SSH deployment matrix;
+source updates on this checkout are activated explicitly with Make.
+
 ## Container names
 
 Compose uses explicit service names without replica numbers. Set

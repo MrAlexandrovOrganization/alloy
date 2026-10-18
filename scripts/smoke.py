@@ -5,13 +5,13 @@ import json
 import os
 import time
 import urllib.parse
-import urllib.request
+
+from receiver_http import read_url
 
 
 def query(base, expression, **params):
     url = base + "?" + urllib.parse.urlencode({"query": expression, **params})
-    with urllib.request.urlopen(url, timeout=10) as response:
-        return json.load(response)["data"]["result"]
+    return json.loads(read_url(url))["data"]["result"]
 
 
 host = os.environ["ALLOY_HOST"]
