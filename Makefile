@@ -98,6 +98,6 @@ include makefiles/ci-deploy.mk
 # Read-only validation of every tracked Compose combination, without runtime secrets.
 .PHONY: compose-layout-check
 compose-layout-check:
-	$(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml --profile '*' config --no-interpolate --no-env-resolution --quiet
+	HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml --profile '*' config --no-env-resolution --quiet
 
 check: compose-layout-check
