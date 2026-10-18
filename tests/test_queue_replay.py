@@ -24,7 +24,10 @@ class QueueReplay(unittest.TestCase):
 
     def setUp(self):
         self.cli = shlex.split(os.environ.get("DOCKER", "docker"))
-        compose = shlex.split(os.environ.get("DOCKER_COMPOSE", "docker compose"))
+        project = Path(__file__).resolve().parents[1]
+        compose = (shlex.split(os.environ["DOCKER_COMPOSE"]) if os.environ.get("DOCKER_COMPOSE")
+                   else ["docker", "compose", "--project-directory", str(project),
+                         "-f", str(project / "compose/docker-compose.yml")])
         config = json.loads(subprocess.check_output(compose + ["config", "--format", "json"]))
         self.vm = config["services"]["vmagent"]
         self.local_url = config["services"]["alloy"]["environment"]["PROMETHEUS_REMOTE_WRITE_URL"]

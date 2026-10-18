@@ -45,7 +45,7 @@ services:
       retries: 6
       start_period: 10s
     extends:
-      file: docker-compose.base.yml
+      file: compose/docker-compose.base.yml
       service: base
     deploy:
       resources:
@@ -92,7 +92,7 @@ services:
       vmagent:
         condition: service_healthy
     extends:
-      file: docker-compose.base.yml
+      file: compose/docker-compose.base.yml
       service: base
     deploy:
       resources:

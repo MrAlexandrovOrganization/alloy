@@ -3,6 +3,7 @@
 
 import json
 import os
+from pathlib import Path
 import shlex
 import subprocess
 import time
@@ -23,7 +24,10 @@ def read_metrics(docker, container):
 
 def main():
     docker = shlex.split(os.environ.get("DOCKER", "docker"))
-    compose = shlex.split(os.environ.get("DOCKER_COMPOSE", "docker compose"))
+    project = Path(__file__).resolve().parents[1]
+    compose = (shlex.split(os.environ["DOCKER_COMPOSE"]) if os.environ.get("DOCKER_COMPOSE")
+               else ["docker", "compose", "--project-directory", str(project),
+                     "-f", str(project / "compose/docker-compose.yml")])
     ids = subprocess.check_output(compose + ["ps", "-a", "-q", "alloy"], text=True).split()
     if not ids:
         return
