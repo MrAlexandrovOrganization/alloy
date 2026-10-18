@@ -3,7 +3,8 @@
 
 import os
 import time
-import urllib.request
+
+from receiver_http import read_url
 
 
 def main():
@@ -12,9 +13,7 @@ def main():
     for attempt in range(12):
         try:
             for url in (prometheus + "/-/ready", loki + "/ready"):
-                with urllib.request.urlopen(url, timeout=5) as response:
-                    if response.status != 200:
-                        raise OSError("Receiver is not ready")
+                read_url(url, timeout=5)
             print("Central receivers are ready; collector may be updated")
             return
         except OSError:
