@@ -1,5 +1,5 @@
 # Optional transport for Colima, which does not inherit the Mac's VPN routes.
-# Select with COMPOSE_FILE=docker-compose.yml:compose.colima.yml in .env.
+# Select with COMPOSE_FILE=compose/docker-compose.yml:compose/compose.colima.yml in .env.
 services:
   collector-tailnet:
     container_name: "${CONTAINER_NAME_PREFIX:-}alloy-tailnet"
@@ -28,7 +28,7 @@ services:
       loki-net: {}
       caddy-metrics-net: {}
     extends:
-      file: docker-compose.base.yml
+      file: compose/docker-compose.base.yml
       service: base
     deploy:
       resources:

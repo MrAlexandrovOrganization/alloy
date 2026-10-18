@@ -1,4 +1,6 @@
-DOCKER_COMPOSE ?= docker compose
+DOCKER_COMPOSE_BASE = docker compose --project-directory "$(CURDIR)"
+include makefiles/compose.mk
+DOCKER_COMPOSE ?= docker compose --project-directory "$(CURDIR)" $(COMPOSE_FLAGS)
 DOCKER ?= docker
 PRE_COMMIT ?= pre-commit
 NETS = loki-net prometheus-net caddy-metrics-net
@@ -67,7 +69,7 @@ format format-check:
 config-check:
 	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
-	HEADSCALE_URL=https://headscale.invalid COMPOSE_FILE=docker-compose.yml:compose.colima.yml $(DOCKER_COMPOSE) config -q
+	HEADSCALE_URL=https://headscale.invalid $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.colima.yml config -q
 	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e ALLOY_ROOTFS_PATH=/rootfs -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
 
 test:
@@ -97,3 +99,11 @@ recreate: prepare-collectors
 	$(DOCKER_COMPOSE) up -d --force-recreate alloy
 
 include makefiles/ci-deploy.mk
+
+# Read-only validation of every tracked Compose combination, without runtime secrets.
+.PHONY: compose-layout-check
+compose-layout-check:
+	$(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml --profile '*' config --no-interpolate --no-env-resolution --quiet
+	$(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml -f compose/compose.colima.yml --profile '*' config --no-interpolate --no-env-resolution --quiet
+
+check: compose-layout-check
