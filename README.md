@@ -245,6 +245,16 @@ vmagent's memory limit defaults to 128m. Physical files can additionally retain
 part of a consumed chunk (about 512MiB); leave that and OS headroom beyond the
 pending-byte budget, especially on private-test-server. Preserve both volumes.
 
+`ALLOY_GOMEMLIMIT` sets Go's soft memory limit independently of
+`ALLOY_MEMORY_LIMIT`. The default is 384MiB inside the 512m container; it leaves
+room for page cache and non-Go memory. Hostkey Russia uses 192MiB: during the
+28 October incident Alloy retained about 480 MiB of Go heap address space while
+the heap profile contained only about 59 MiB of live objects. Together with the
+other services this caused sustained swapping on the 2 GiB VM. Size this setting
+from the live heap and runtime overhead, then check CPU/GC pressure after
+activation; setting it below the live heap can increase GC work. Keep both state
+volumes and vmagent's disk queue when recreating the collector.
+
 Alloy scrapes vmagent as `job="vmagent"`, with the same `host` and
 `service="vmagent"`. Recalculate a day of traffic with
 `sum by(host)(rate(vmagent_remotewrite_bytes_sent_total[1h])) * 86400`, allow

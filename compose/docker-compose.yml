@@ -67,6 +67,8 @@ services:
       - --storage.path=/var/lib/alloy/data
       - /etc/alloy/config.alloy
     environment:
+      # Bound Go's heap before the cgroup limit; keep room for native/cache memory.
+      GOMEMLIMIT: ${ALLOY_GOMEMLIMIT:-384MiB}
       ALLOY_HOST: ${ALLOY_HOST:?Run via make}
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
       PROMETHEUS_REMOTE_WRITE_URL: http://alloy-queue-sink:8429/api/v1/write
