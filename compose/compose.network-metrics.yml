@@ -21,7 +21,9 @@ services:
       - --collector.netstat.fields=^(Tcp.*|Udp.*)$$
       - --collector.sockstat
       - --collector.tcpstat
-      - --collector.conntrack
+      - --collector.sysctl
+      - --collector.sysctl.include=net.netfilter.nf_conntrack_count
+      - --collector.sysctl.include=net.netfilter.nf_conntrack_max
       - --collector.softnet
       - --collector.netdev.device-exclude=^(lo|veth.*|br-.*|docker.*|tailscale.*|wg.*)$$
     logging:

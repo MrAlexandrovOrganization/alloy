@@ -37,6 +37,12 @@ host TCP/netstat/conntrack metrics. Network bytes exclude loopback, Docker/veth,
 tailnet and WireGuard interfaces to avoid adding multiple copies of each packet.
 They still include other applications using the host's physical interfaces.
 
+Conntrack occupancy uses node_exporter's standard sysctl collector for
+`net.netfilter.nf_conntrack_count` / `nf_conntrack_max`. These hosts do not expose
+`/proc/net/stat/nf_conntrack`; the dedicated conntrack collector otherwise reports
+an incomplete collection despite successfully reading count/limit. No sysctl is
+modified and no additional capabilities are needed.
+
 TCP/UDP container metrics are gauges despite cAdvisor's `_total` suffix; never
 apply `rate` to connection counts. IPv4/IPv6 are distinct metric names. They count
 all sockets of the container network namespace, including internal connections,
