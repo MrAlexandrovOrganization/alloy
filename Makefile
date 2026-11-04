@@ -1,6 +1,6 @@
 DOCKER_COMPOSE_BASE = docker compose --project-directory "$(CURDIR)"
 include makefiles/compose.mk
-DOCKER_COMPOSE ?= docker compose --project-directory "$(CURDIR)" $(COMPOSE_FLAGS)
+DOCKER_COMPOSE ?= docker compose --project-directory "$(CURDIR)" $(COMPOSE_FLAGS) $(if $(strip $(HOST_NETWORK_METRICS_ADDRESS)),-f compose/compose.network-metrics.yml,)
 DOCKER ?= docker
 PRE_COMMIT ?= pre-commit
 NETS = loki-net prometheus-net caddy-metrics-net
@@ -27,6 +27,7 @@ network:
 
 directories:
 	@mkdir -p "$(MONITORING_DATA_DIR)/prometheus-targets"
+	python3 scripts/network_metrics.py
 
 migrate-state:
 	python3 scripts/migrate-state.py
@@ -36,7 +37,7 @@ queue-init:
 	$(DOCKER) run --rm --network none --read-only --user 0 --cap-drop ALL --cap-add CHOWN --security-opt no-new-privileges --entrypoint sh -v observability_vmagent_data:/queue victoriametrics/vmagent:$(VMAGENT_VERSION) -c 'chown 65534:65534 /queue'
 
 prepare-collectors: init queue-init
-	$(DOCKER_COMPOSE) up -d --wait --wait-timeout 90 vmagent
+	$(DOCKER_COMPOSE) up -d --wait --wait-timeout 90 vmagent $(if $(strip $(HOST_NETWORK_METRICS_ADDRESS)),node-network,)
 	python3 scripts/migrate-queue.py
 	$(MAKE) migrate-state
 
@@ -65,6 +66,8 @@ format format-check:
 config-check:
 	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
+	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.network-metrics.yml config -q
+	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.resources.yml -f compose/compose.network-metrics.yml config -q
 	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e ALLOY_ROOTFS_PATH=/rootfs -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
 
 test:
@@ -99,5 +102,6 @@ include makefiles/ci-deploy.mk
 .PHONY: compose-layout-check
 compose-layout-check:
 	HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml --profile '*' config --no-env-resolution --quiet
+	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml -f compose/compose.network-metrics.yml --profile '*' config --no-env-resolution --quiet
 
 check: compose-layout-check

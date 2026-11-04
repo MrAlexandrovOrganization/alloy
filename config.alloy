@@ -297,9 +297,16 @@ prometheus.exporter.unix "host" {
 	procfs_path = sys.env("ALLOY_PROCFS_PATH")
 	sysfs_path  = "/sys"
 	rootfs_path = sys.env("ALLOY_ROOTFS_PATH")
+
+	// The existing VPN watchdog publishes only bounded, non-secret health metrics.
+	textfile {
+		directory = "/rootfs/var/lib/vless-relay-watchdog"
+	}
 }
 
 prometheus.exporter.cadvisor "containers" {
+	// Preserve the defaults elsewhere; VPN hosts opt in to per-container TCP/UDP.
+	disabled_metrics             = array.concat(["advtcp", "cpu_topology", "cpuset", "hugetlb", "memory_numa", "process", "referenced_memory", "resctrl", "sched"], encoding.from_json(coalesce(sys.env("ALLOY_CADVISOR_NETWORK_DISABLED"), "[\"tcp\",\"udp\"]")))
 	docker_only                  = true
 	store_container_labels       = false
 	allowlisted_container_labels = ["com.docker.compose.project", "com.docker.compose.service", "observability.service"]

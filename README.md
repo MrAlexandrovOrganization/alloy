@@ -1,5 +1,8 @@
 # Alloy
 
+VPN network diagnostics use the existing collector plus an optional standard
+node_exporter in the host network namespace. See [VPN-MONITORING.md](VPN-MONITORING.md).
+
 ## Image version
 
 Alloy, vmagent and the isolated test receiver versions live in

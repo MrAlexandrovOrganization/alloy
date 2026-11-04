@@ -39,7 +39,18 @@ for attempt in range(12):
             start=int((time.time() - 900) * 1e9),
             limit=1,
         )
-        if {"node", "cadvisor", "alloy", "vmagent"} <= healthy & current and containers and logs:
+        network_ready = True
+        if os.environ.get("HOST_NETWORK_METRICS_ADDRESS"):
+            network = query(
+                prometheus + "/api/v1/query",
+                'timestamp(up{service="host-network",' + selector + '} == 1)',
+            )
+            failures = query(
+                prometheus + "/api/v1/query",
+                'node_scrape_collector_success{service="host-network",' + selector + '} == 0',
+            )
+            network_ready = bool(network) and all(float(m["value"][1]) >= started for m in network) and not failures
+        if {"node", "cadvisor", "alloy", "vmagent"} <= healthy & current and containers and logs and network_ready:
             print(f"Fresh delivery verified for {host}: node, cadvisor, alloy, vmagent and Docker logs")
             break
     except (OSError, ValueError, KeyError):

@@ -1,0 +1,37 @@
+# Native Linux opt-in: the exporter joins the actual host network namespace.
+# Alloy stays on its existing networks and scrapes only the private tailnet address.
+services:
+  node-network:
+    container_name: "${CONTAINER_NAME_PREFIX:-}alloy-node-network"
+    image: ${NODE_EXPORTER_IMAGE:?Run via make}
+    network_mode: host
+    user: "65534:65534"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      GOMEMLIMIT: 32MiB
+    command:
+      - --web.listen-address=${HOST_NETWORK_METRICS_ADDRESS:?Set the private tailnet endpoint}
+      - --web.disable-exporter-metrics
+      - --collector.disable-defaults
+      - --collector.netdev
+      - --collector.netstat
+      - --collector.netstat.fields=^(Tcp.*|Udp.*)$$
+      - --collector.sockstat
+      - --collector.tcpstat
+      - --collector.conntrack
+      - --collector.softnet
+      - --collector.netdev.device-exclude=^(lo|veth.*|br-.*|docker.*|tailscale.*|wg.*)$$
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 64m
+          pids: 32
