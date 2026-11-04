@@ -43,6 +43,24 @@ Conntrack occupancy uses node_exporter's standard sysctl collector for
 an incomplete collection despite successfully reading count/limit. No sysctl is
 modified and no additional capabilities are needed.
 
+Delivery smoke checks use aggregate PromQL and LogQL: fresh core jobs, a positive
+named-container count, a positive recent Docker-log count and successful network
+collectors. They do not fetch log bodies or all service series. This also keeps
+readiness responses small on the current VM→WSL path, where large HTTP responses
+can time out despite working metric ingestion; the separate SSH route from the
+CI gateway to WSL also currently times out. Administrative delivery can use the
+same restricted receiver and pinned host key through the environment profile's
+local LAN SSH route. Do not mistake local/runtime checks for a completed Actions run.
+
+On both VPN VMs the same Loki response succeeds with SYN MSS 1000 and times out
+with the OS default. Their private `.env` therefore sets `READINESS_TCP_MSS=1000`.
+This optional setting affects only readiness HTTP sockets to IPv4 tailnet addresses;
+the default is the OS policy. It sets TCP_MAXSEG **before connect**, validates the
+endpoint, and leaves host routes/sysctls and application sockets unchanged.
+Standard HTTP/gzip handling is retained; unsupported endpoint/setting combinations
+fail rather than silently bypassing checks. It does not repair the separate CI
+gateway→WSL SSH transport, whose administrative fallback remains the LAN route.
+
 TCP/UDP container metrics are gauges despite cAdvisor's `_total` suffix; never
 apply `rate` to connection counts. IPv4/IPv6 are distinct metric names. They count
 all sockets of the container network namespace, including internal connections,
