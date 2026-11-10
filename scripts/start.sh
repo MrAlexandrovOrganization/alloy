@@ -36,4 +36,15 @@ if [ "${ALLOY_DOCKER_DESKTOP:-false}" = true ]; then
     done
 fi
 
+# The VPN watchdog is optional. An empty directory setting disables textfile
+# input; never report an absent watchdog as a collection failure on other hosts.
+# An explicitly configured path is kept even when missing, so mistakes stay visible.
+if [ "${ALLOY_TEXTFILE_DIRECTORY+x}" != x ]; then
+    ALLOY_TEXTFILE_DIRECTORY=
+    if [ -d "${ALLOY_ROOTFS_PATH:-/rootfs}/var/lib/vless-relay-watchdog" ]; then
+        ALLOY_TEXTFILE_DIRECTORY="${ALLOY_ROOTFS_PATH:-/rootfs}/var/lib/vless-relay-watchdog"
+    fi
+fi
+export ALLOY_TEXTFILE_DIRECTORY
+
 exec /bin/alloy "$@"

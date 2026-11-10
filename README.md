@@ -79,8 +79,8 @@ change the selectors):
 | `kafka/kafka-ui` | Java timestamp followed by explicit severity, including `DEBUG` scheduler events |
 | `kafka/kafka` | Bracketed timestamp and explicit severity; INFO periodic `QuorumController` summaries from `EventPerformanceMonitor` become `debug`; `PeriodicTaskControlManager` reports for `electUnclean`/`electPreferred` become `debug` only when they generated zero records |
 | `redis/redis` | Redis RDB background-save messages (`Saving...`, save start/completion, CoW statistics and `DB saved on disk`) become `debug` |
-| `ollama/ollama` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` and `GET /api/tags` probes = `debug` |
-| `stash/postgres`, `subscriptions-bot/postgres`, `subscription-publisher/postgres`, `subscription-catalog/postgres` | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
+| `ollama/ollama`, `stash-workers/ollama` | GIN access logs: HTTP 5xx = `error`, 4xx = `warn`, other valid statuses = `info`; successful 2xx loopback `HEAD /` and `GET /api/tags` probes = `debug` |
+| All containers with an exact PostgreSQL timestamp/PID/severity prefix | PostgreSQL timestamp/PID/severity prefix; `LOG` = `info`, `DEBUG1`-`DEBUG5` = `debug`; LOG timed checkpoint starts and completion summaries = `debug` |
 | `loki/loki` | INFO logfmt stats/metric/limited requests from `metrics.go` become `debug` only with `status=200` and `latency=fast`; existing-table lookups and explicitly listed maintenance/query-start events become `debug` |
 | `telemt/telemt` | Rust tracing timestamp, severity and `telemt::...` target; native levels are preserved, including INFO/WARN TLS/SNI rejection events |
 
@@ -375,3 +375,120 @@ unchanged; clients address services or explicit network aliases.
 к прежним именам файлов, сохранив прежний набор overlays и порядок. Для плавного
 перехода Make также распознаёт прежние короткие имена, если файлы уже перенесены.
 Не меняйте project name и не удаляйте прежние тома для переноса файлов.
+
+## Log audit, 11 November 2026
+
+The 24-hour Loki snapshot ending at 01:01:45 Moscow time contained 416,512
+records across 65 host/service pairs on six hosts (Russia, Finland, WSL, ASUS,
+Mac and private-test). This is observed logging activity, not an inventory of
+all expected containers. Counts use a fixed-time instant query,
+`sum by (host,service,level) (count_over_time({job="docker"}[24h]))`;
+they do not reuse the last nonempty value of historical range series.
+`server` had no records in this window. Direct SSH to
+`server` and `private-test-server` timed out; private-test history was available
+in Loki. Running-container inventories were read on the other five hosts.
+No production requests, database writes, restarts or deployments were performed.
+
+| Indexed level | Records |
+| --- | ---: |
+| unknown | 106,709 (25.6%) |
+| error | 74,341 |
+| warn | 36,074 |
+| fatal | 4 |
+| info | 149,235 |
+| debug | 50,149 |
+
+92,515 unknown records came from Tailscale sidecars, 8,604 from worker Ollama
+access logs. PostgreSQL from additional Compose projects and standalone fixtures
+accounted for another substantial group. Counts include retries, client
+cancellations, operator diagnostics and test containers; they are not counts of
+independent incidents or failed user actions. Only samples of each affected
+service/level were inspected, not every body in the entire window.
+
+### Prepared changes and validation
+
+* The exact PostgreSQL prefix now works across projects and standalone containers.
+  Worker Ollama GIN status parsing uses the existing status policy.
+* Native RabbitMQ, Headscale, Xray, GitHub runner and legacy telego prefixes are
+  parsed. Notes' Go OTel export failures are explicitly error events.
+* A narrow allowlist marks routine Tailscale peer-discovery/netcheck messages
+  debug. UDP-probe fallback does not prove that application traffic succeeds.
+  Unfamiliar sidecar messages remain unknown.
+* The optional watchdog textfile directory is selected by `scripts/start.sh`
+  only when present. An explicitly supplied `ALLOY_TEXTFILE_DIRECTORY`, including
+  an empty string, overrides discovery. A missing explicit path still reports
+  `node_textfile_scrape_error=1`. Finland's existing watchdog remains collected.
+  Removing a directory after startup remains an error; adding one requires a
+  restart. Watchdog success/freshness must still be checked independently.
+* `make check` passed against the pinned Alloy image through Colima: 31 tests,
+  with the explicit Docker Desktop regression skipped. Tests run the actual
+  production processing stages with synthetic HTTP input; normalized labels,
+  detected-level metadata and unchanged bodies are asserted. Empty/present/bad
+  explicit textfile paths are exercised through the real exporter and entrypoint.
+
+The other prepared fixes also passed their project `make check`: CLIP ran 14
+synthetic tests; Transcriber ran 127 tests with 62 fixture-dependent tests skipped;
+Caddy ran its 88 existing HTTP ingress checks and the new real proxy failover
+fixtures, plus configuration/static checks. PostgreSQL/RabbitMQ integration and
+production rollout were not validated by those local results.
+
+These are local source changes, not a production rollout. Existing history is
+unchanged. There is no blanket unknown-to-info or error-to-warning conversion.
+Remaining examples include Python traceback fragments (addressed at their HTTP
+handler sources), PostgreSQL HINT/STATEMENT context lines, Kafka multiline
+continuations and Bot API PID/time output without a native severity. These need
+source-specific handling; assigning all of them info would hide failures.
+
+### Significant findings
+
+| Finding and applicability | Evidence | Risk / next step |
+| --- | --- | --- |
+| Caddy / Grafana access from Russia | 49,378 Caddy error records; samples contain access 502 and separate dial errors to `100.64.0.10:3000` | Intermittent user-facing failure. Both `.10:3000` and `.3:3000` returned healthy Grafana during this audit. Caddy source now supports ordered paths with bounded connection retry; its private upstream list still needs activation. Both paths lead to the same WSL service, not independent HA. |
+| Transcriber ingress trace delivery | 7,196 errors and 8,163 warnings; runtime exporter points at `.1:4317`, TCP times out while `.3:4317` accepts connections | Trace loss. Russia overlay corrected to the current Jaeger endpoint in the Transcriber checkout; end-to-end span delivery still needs checking after rollout. |
+| Optional textfile input | About 5,767 Russia / 5,760 ASUS Alloy errors; repeated missing `/rootfs/var/lib/vless-relay-watchdog` | Collector configuration fault, fixed locally as above, without changing application severity. |
+| Finland cAdvisor filesystem collection | 4,485 Alloy errors; nonexistent Docker overlayfs/container paths in samples | Partial filesystem telemetry. Sampled container IDs were no longer present when inspected; current Docker overlayfs and containerd snapshot directories exist. Check stale-container lifecycle and driver/mount compatibility before changing anything; do not suppress errors or migrate Docker storage casually. |
+| CLIP SQLite contention | 89 coordinator errors, `database is locked`; 23,982 combined Mac/WSL worker warnings | Read-side status polling took `BEGIN IMMEDIATE`. The isolated CLIP checkout now uses a read-only connection for status. BUSY/LOCKED become retryable UNAVAILABLE; other DB failures remain ERROR/INTERNAL. Tests verify reads during a held writer transaction. This removes one contention source, not proof of zero runtime lock errors. |
+| Transcriber worker diagnostics | 366 combined worker iteration errors; messages previously omitted causes | Worker logs now include safe exception type/RPC code/attempt/delay, and unexpected repeated failures back off up to 60 seconds. No exception message, credential or user content is copied into these fields. |
+| Notes search synchronization | 294 warning summaries with `errors=1`, but no cause in sampled summary | Partial sync may persist. Inspect the linked trace and per-item error before changing level or adding retry. |
+| Stash processing | 799 errors; sampled failures include unavailable/locked CLIP | Indexing can lag. Validate backlog recovery after CLIP rollout; preserve existing idempotent backfill and stored originals. |
+| VPN edge | 1,993 warnings / 476 errors; samples show matcher timeouts and broken/reset connections | Distinguish external client disconnects from tunnel failures with the real watchdog and availability metrics. Do not trigger a restart on every log line. |
+| Prometheus overlapping blocks | Five warnings, multiple overlapping TSDB block ranges | Investigate compaction/remote-write history without deleting blocks or clearing storage. |
+| Grafana error alert | `provisioning/alerting/rules.yml`: `service-log-errors` is paused, selects only `error`, threshold >5/5m, for 2m | No active notification from this provisioned rule; fatal is omitted. Live alert state was not inspected. Review per-service signals before enabling notifications. |
+
+For the CLIP fix the original local checkout was behind the deployed source and
+contained unrelated edits. It was preserved. The clean checkout containing the
+prepared fix is `backends/clip-embedder-log-recovery`, branch
+`codex/log-recovery`, based on deployed commit `c069101`. Transcriber and Caddy
+also had pre-existing edits; only the logging/recovery changes belong to this audit.
+
+### Severity and recovery policy
+
+An ERROR means an operation failed, a terminal job failed, data could not be
+persisted, or a dependency remained unavailable beyond that operation's retry
+budget. WARN means actionable degradation or retry in progress. A successful
+fallback/recovery should produce INFO with the outcome; routine probes and
+peer discovery are DEBUG. Recoverable does not mean recovered: retain the error
+if the operation ultimately fails, and use health/backlog/freshness metrics to
+check that recovery happened. PostgreSQL FATAL may close a session rather than
+crash the server; preserve the native level and correlate with availability.
+
+Use bounded backoff with jitter, cancellation, idempotent request IDs and durable
+queues for transient failures. Alternate paths must preserve authentication and
+reach the same data; they cannot provide HA for a stopped WSL backend. Never
+replay an already accepted non-idempotent write just to get rid of an error.
+When Mac/WSL inference is unavailable, leave jobs queued; no model fallback on
+Russia or activation of retired stacks is part of this work.
+
+Alloy's current CI deployment matrix covers six remote hosts and excludes Mac.
+The prepared source is in the separate `log-recovery/alloy`
+checkout, branch `codex/log-severity-audit`, based on deployed `d15facb`.
+The original Mac checkout was restored to `codex/macbook-container-metrics`,
+with its existing private Colima configuration intact. Current origin/main does
+not contain that Colima overlay. Mac activation requires integrating the
+collector-only fix with its existing configuration; do not replace it with the
+remote main deployment unchanged.
+
+After an authorized CI/CD rollout, compare fresh 15-minute/one-hour counts by
+host/service/level, check unknown samples and actual queue recovery, and find a
+new span in Jaeger. Inventory and collector freshness must be checked separately:
+zero errors with missing telemetry is not success. Notifications were not enabled.
