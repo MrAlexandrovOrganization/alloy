@@ -11,8 +11,13 @@ import subprocess
 import sys
 import time
 
-PROJECTS = {name: f"https://github.com/MrAlexandrovOrganization/{name}.git"
-            for name in ("alloy", "prometheus", "loki", "grafana")}
+def repository(project, config):
+    if project not in config["projects"] or not re.fullmatch(r"[a-z][a-z0-9-]*", project):
+        raise ValueError("Project is not allowed on this host")
+    url = config.get("repositories", {}).get(project, "")
+    if not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git", url):
+        raise ValueError("A pinned repository URL is required in the private policy")
+    return url
 
 
 def request(value):
@@ -29,8 +34,7 @@ def run(args, cwd, capture=False):
 
 
 def deploy(project, sha, config, base, state):
-    if project not in PROJECTS or project not in config["projects"]:
-        raise ValueError("Project is not allowed on this host")
+    url = repository(project, config)
     directory = base / project
     if run(["git", "rev-parse", "--show-toplevel"], directory, True) != str(directory.resolve()):
         raise ValueError("Unexpected repository root")
@@ -39,7 +43,7 @@ def deploy(project, sha, config, base, state):
     if run(["git", "status", "--porcelain", "--untracked-files=no"], directory, True):
         raise ValueError("Tracked local changes must be reconciled before deployment")
     previous = run(["git", "rev-parse", "HEAD"], directory, True)
-    run(["git", "fetch", "--quiet", "--no-tags", PROJECTS[project], "refs/heads/main"], directory)
+    run(["git", "fetch", "--quiet", "--no-tags", url, "refs/heads/main"], directory)
     if run(["git", "rev-parse", "FETCH_HEAD"], directory, True) != sha:
         raise ValueError("Stale workflow: main has changed; deploy the latest checked revision")
     run(["git", "merge", "--ff-only", "--quiet", sha], directory)
@@ -62,8 +66,7 @@ def main():
     project = sys.argv[1]
     operation, sha = request(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
     config = json.loads(Path("/etc/observability-deploy.json").read_text())
-    if project not in PROJECTS or project not in config["projects"]:
-        raise ValueError("Project is not allowed on this host")
+    repository(project, config)
     if operation == "probe":
         print(f"SSH deploy access verified: {config['host']}/{project}")
         return
@@ -79,7 +82,7 @@ def main():
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Another deployment is still running")
                 time.sleep(1)
-        deploy(project, sha, config, Path("/home/maxim/projects/infra/observability"), state)
+        deploy(project, sha, config, Path(config.get("base_path", str(Path.home() / "projects/infra/observability"))), state)
 
 
 if __name__ == "__main__":

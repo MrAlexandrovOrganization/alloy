@@ -45,3 +45,9 @@ must be removed from the private policy; do not probe or restore them.
 The restricted receiver/bootstrap commands are explicit administrative tools.
 Use a private policy and existing access; do not replace unknown authorized keys.
 Additional local Compose overlays and private settings are preserved at rollout.
+
+The receiver policy in `/etc/observability-deploy.json` also declares `projects`,
+`repositories` (a project-to-HTTPS repository URL map), `sudo_make`, `host`, and
+optionally `base_path`. The public receiver contains no organization, repository
+catalog or machine inventory. Supply this mapping when explicitly bootstrapping
+or updating the restricted receiver; keep the policy and its backups private.

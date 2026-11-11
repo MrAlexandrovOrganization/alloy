@@ -4,7 +4,7 @@ Each host keeps its existing Alloy collector and vmagent disk queue. Alloy's
 embedded node_exporter supplies CPU/memory/filesystem metrics; embedded cAdvisor
 supplies container resources, packet/byte counters and optional TCP/UDP gauges.
 Application metrics come from vpn-manager's existing `/metrics`. Prometheus and
-Grafana remain central on WSL. No collector sidecar is added to each VPN container.
+Grafana remain on the configured central receiver. No collector sidecar is added to each VPN container.
 
 For native Linux network statistics an optional **standard node_exporter** container
 joins the host network namespace. This is intentional: mounting host `/proc` into a
@@ -17,8 +17,8 @@ in `makefiles/versions.mk`. It binds only an explicitly configured tailnet addre
 In the host's private `.env`, opt in with:
 
 ```dotenv
-# Russia; use 100.64.0.6:19100 on Finland.
-HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100
+# Synthetic example; select this host’s private bind address.
+HOST_NETWORK_METRICS_ADDRESS=100.64.0.99:19100
 ALLOY_CADVISOR_NETWORK_DISABLED=[]
 ```
 
@@ -46,20 +46,11 @@ modified and no additional capabilities are needed.
 Delivery smoke checks use aggregate PromQL and LogQL: fresh core jobs, a positive
 named-container count, a positive recent Docker-log count and successful network
 collectors. They do not fetch log bodies or all service series. This also keeps
-readiness responses small on the current VM→WSL path, where large HTTP responses
-can time out despite working metric ingestion; the separate SSH route from the
-CI gateway to WSL also currently times out. Administrative delivery can use the
-same restricted receiver and pinned host key through the environment profile's
-local LAN SSH route. Do not mistake local/runtime checks for a completed Actions run.
-
-On both VPN VMs the same Loki response succeeds with SYN MSS 1000 and times out
-with the OS default. Their private `.env` therefore sets `READINESS_TCP_MSS=1000`.
-This optional setting affects only readiness HTTP sockets to IPv4 tailnet addresses;
-the default is the OS policy. It sets TCP_MAXSEG **before connect**, validates the
-endpoint, and leaves host routes/sysctls and application sockets unchanged.
-Standard HTTP/gzip handling is retained; unsupported endpoint/setting combinations
-fail rather than silently bypassing checks. It does not repair the separate CI
-gateway→WSL SSH transport, whose administrative fallback remains the LAN route.
+readiness responses bounded on constrained network paths. Optional
+`READINESS_TCP_MSS=1000` affects only readiness HTTP sockets to IPv4 tailnet
+addresses. The default is the OS policy. TCP_MAXSEG is set before connect;
+unsupported endpoint/setting combinations fail rather than bypassing checks.
+Host routes, sysctls and application sockets remain unchanged.
 
 TCP/UDP container metrics are gauges despite cAdvisor's `_total` suffix; never
 apply `rate` to connection counts. IPv4/IPv6 are distinct metric names. They count
@@ -67,17 +58,13 @@ all sockets of the container network namespace, including internal connections,
 not users or logical VLESS streams. The opt-in is per host because these collectors
 are disabled by default and add work proportional to the number of sockets.
 
-The existing Finland watchdog tests an actual VLESS/Reality connection through the
-Russian public entry to the Finnish internet exit. Its bounded `metrics.prom` is
-read through Alloy's standard textfile collector. Freshness is separate from
-success: a stopped timer cannot leave a permanent green status. This check does
-not test the phone's Wi-Fi/provider path or direct Finnish ingress. VPN service
-healthchecks and `/metrics` availability alone do not establish VPN connectivity.
-
-The Grafana repository owns the `vpn-diagnostics` dashboard. Client usage totals
-remain in `vpn-traffic`: namespace counters reset on recreation and are not a
-durable usage ledger. Do not add host traffic, container traffic and the two tunnel
-hops together. The kernel TCP queue values from node_exporter mix LISTEN backlog
+An optional external watchdog can test an actual authenticated tunnel connection.
+Its bounded `metrics.prom` is read through Alloy's standard textfile collector.
+Freshness is separate from success: a stopped timer cannot leave a permanent
+green status. Service healthchecks and `/metrics` availability alone do not
+establish end-to-end connectivity. Application dashboards belong to their
+service packages; namespace counters are not a durable usage ledger.
+The kernel TCP queue values from node_exporter mix LISTEN backlog
 counts with other sockets' queue bytes; the diagnostic dashboard instead uses
 socket memory, SYN states and ListenOverflows/ListenDrops as saturation indicators.
 

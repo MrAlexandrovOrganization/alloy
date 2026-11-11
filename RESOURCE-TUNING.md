@@ -1,4 +1,4 @@
-# Hostkey Russia resource tuning
+# Resource tuning for small hosts
 
 Opt-in Compose overlay `compose/compose.resources.yml` changes only CPU ceilings
 and healthcheck timing. No images, commands, credentials, ports, networks, volumes

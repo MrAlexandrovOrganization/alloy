@@ -20,6 +20,9 @@ if (
     or type(config.get("sudo_make")) is not bool
 ):
     raise SystemExit("Invalid private receiver policy")
+repositories = config.get("repositories", {})
+if any(not re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git", repositories.get(project, "")) for project in config["projects"]):
+    raise SystemExit("Each allowed project requires a private pinned repository URL")
 for project, key in payload["keys"].items():
     if not re.fullmatch(r"[a-z][a-z0-9-]*", project) or not re.fullmatch(
         r"ssh-ed25519 [A-Za-z0-9+/=]+", key

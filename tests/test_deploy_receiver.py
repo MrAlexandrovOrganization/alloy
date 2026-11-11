@@ -40,13 +40,18 @@ class DeployReceiverTests(unittest.TestCase):
                 return SHA if any(c[:2] == ["git", "merge"] for c in calls) else OLD
             return ""
 
-        config = {"host": "fixture", "projects": ["alloy"] if allowed else [], "sudo_make": sudo}
+        config = {"host": "fixture", "projects": ["alloy"] if allowed else [], "sudo_make": sudo, "repositories": {"alloy": "https://github.com/example/collector.git"}}
         with patch.object(receiver, "run", side_effect=run):
             try:
                 receiver.deploy("alloy", SHA, config, root, root)
             except ValueError:
                 return calls, None
         return calls, json.loads((root / "alloy.json").read_text())
+
+    def test_repository_must_be_declared_in_private_policy(self):
+        for repositories in ({}, {"alloy": "ssh://example.invalid/collector.git"}, {"alloy": "https://github.com/example/collector.git;touch x"}):
+            with self.subTest(repositories=repositories), self.assertRaises(ValueError):
+                receiver.repository("alloy", {"projects": ["alloy"], "repositories": repositories})
 
     def test_dirty_checkout_is_not_fetched_or_activated(self):
         calls, receipt = self.exercise(dirty=True)

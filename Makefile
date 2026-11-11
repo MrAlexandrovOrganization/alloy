@@ -67,8 +67,8 @@ format format-check:
 config-check: observability-generate
 	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
-	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.network-metrics.yml config -q
-	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.resources.yml -f compose/compose.network-metrics.yml config -q
+	HOST_NETWORK_METRICS_ADDRESS=100.64.0.99:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.network-metrics.yml config -q
+	HOST_NETWORK_METRICS_ADDRESS=100.64.0.99:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.resources.yml -f compose/compose.network-metrics.yml config -q
 	python3 scripts/validate_alloy.py "$(ALLOY_CONFIG_FILE)"
 
 test:
@@ -103,7 +103,7 @@ include makefiles/ci-deploy.mk
 .PHONY: compose-layout-check
 compose-layout-check:
 	HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml --profile '*' config --no-env-resolution --quiet
-	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml -f compose/compose.network-metrics.yml --profile '*' config --no-env-resolution --quiet
+	HOST_NETWORK_METRICS_ADDRESS=100.64.0.99:19100 HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml -f compose/compose.network-metrics.yml --profile '*' config --no-env-resolution --quiet
 
 check: compose-layout-check
 
