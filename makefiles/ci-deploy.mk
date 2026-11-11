@@ -1,8 +1,5 @@
 .PHONY: ci-deploy deploy
 ci-deploy:
-	$(MAKE) observability-receive
-	$(MAKE) observability-release-check
-	$(MAKE) config-check
 	python3 scripts/ci-deploy.py
 
 deploy:

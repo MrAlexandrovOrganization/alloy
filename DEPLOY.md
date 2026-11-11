@@ -12,7 +12,7 @@ Configure the repository's `DEPLOY_ENABLED` variable and these secrets:
   Each node has `alias`, `host`, `port`, `user`, `key_alias`. Only declared targets
   are contacted; aliases and addresses never appear in public job output.
 - `OBSERVABILITY_BUNDLE_1`, `_2`, `_3`: consecutive base64 chunks of a private gzip
-  tar bundle (at most 48,000 characters each).
+  tar bundle (at most 30,000 characters each).
 - `OBSERVABILITY_BUNDLE_SHA256`: SHA-256 of the decoded gzip bytes.
 
 A private input directory contains `services.lock.json`, `packages/` and

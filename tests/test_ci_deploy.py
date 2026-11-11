@@ -42,6 +42,14 @@ class SSHTransportTests(unittest.TestCase):
                 with self.assertRaises(ValueError): client.main()
                 ssh.assert_not_called()
 
+    def test_ci_make_entry_does_not_execute_remote_runtime_preparation(self):
+        import subprocess
+        root = Path(__file__).resolve().parents[1]
+        command = subprocess.check_output(['make', '-n', 'ci-deploy'], cwd=root, text=True)
+        self.assertIn('scripts/ci-deploy.py', command)
+        self.assertNotIn('observability-receive', command)
+        self.assertNotIn('recreate', command)
+
     def test_ssh_policy_rejects_config_injection(self):
         env = self.environment(); config = json.loads(env['DEPLOY_TRANSPORT_JSON'])
         config['targets'][0]['host'] = '192.0.2.2\nProxyCommand malicious'
