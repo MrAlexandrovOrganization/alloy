@@ -135,6 +135,14 @@ loki.process "docker" {
 		}
 	}
 
+	// Opt-in filtering runs after all service severity normalization. Unknown
+	// messages remain available even in the warn/error profile.
+	stage.drop {
+		source              = "normalized_level"
+		expression          = coalesce(sys.env("ALLOY_LOG_DROP_LEVEL_REGEX"), "disabled")
+		drop_counter_reason = "configured_low_priority"
+	}
+
 	stage.structured_metadata {
 		values = {
 			// Use the same severity for Loki detection and stream selectors.
@@ -174,7 +182,7 @@ prometheus.exporter.cadvisor "containers" {
 prometheus.scrape "host" {
 	targets         = prometheus.exporter.unix.host.targets
 	job_name        = "node"
-	scrape_interval = "15s"
+	scrape_interval = coalesce(sys.env("ALLOY_SCRAPE_INTERVAL"), "15s")
 	forward_to      = [prometheus.relabel.host.receiver]
 }
 
@@ -200,7 +208,7 @@ prometheus.relabel "host" {
 prometheus.scrape "containers" {
 	targets         = prometheus.exporter.cadvisor.containers.targets
 	job_name        = "cadvisor"
-	scrape_interval = "15s"
+	scrape_interval = coalesce(sys.env("ALLOY_SCRAPE_INTERVAL"), "15s")
 	forward_to      = [prometheus.relabel.containers.receiver]
 }
 
@@ -273,21 +281,21 @@ prometheus.scrape "services" {
 	targets         = discovery.relabel.services.output
 	job_name        = "services"
 	honor_labels    = true
-	scrape_interval = "15s"
+	scrape_interval = coalesce(sys.env("ALLOY_SCRAPE_INTERVAL"), "15s")
 	forward_to      = [prometheus.remote_write.central.receiver]
 }
 
 prometheus.scrape "self" {
 	targets         = [{"__address__" = "127.0.0.1:12345", "instance" = sys.env("ALLOY_HOST"), "service" = "alloy"}]
 	job_name        = "alloy"
-	scrape_interval = "15s"
+	scrape_interval = coalesce(sys.env("ALLOY_SCRAPE_INTERVAL"), "15s")
 	forward_to      = [prometheus.remote_write.central.receiver]
 }
 
 prometheus.scrape "queue" {
 	targets         = [{"__address__" = "alloy-queue-sink:8429", "instance" = sys.env("ALLOY_HOST"), "service" = "vmagent"}]
 	job_name        = "vmagent"
-	scrape_interval = "15s"
+	scrape_interval = coalesce(sys.env("ALLOY_SCRAPE_INTERVAL"), "15s")
 	forward_to      = [prometheus.remote_write.central.receiver]
 }
 

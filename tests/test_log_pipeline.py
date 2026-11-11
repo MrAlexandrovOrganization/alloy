@@ -101,6 +101,12 @@ class LogPipelineTests(unittest.TestCase):
         )
 
     def test_severity_and_body_preservation(self):
+        self.check_severity_and_body()
+
+    def test_quiet_profile_preserves_warnings_errors_and_unknown(self):
+        self.check_severity_and_body(quiet=True)
+
+    def check_severity_and_body(self, quiet=False):
         import sys
 
         sys.path.insert(0, str(self.root / "scripts"))
@@ -138,7 +144,8 @@ loki.source.api "fixture" {
   }
   forward_to = [loki.process.docker.receiver]
 }
-"""
+""",
+            *(["-e", "ALLOY_LOG_DROP_LEVEL_REGEX=trace|debug|info"] if quiet else []),
         )
         pg = "2026-11-10 21:00:00.001 UTC [42] "
         cases = [
@@ -353,11 +360,18 @@ loki.source.api "fixture" {
                 fields = dict(item.split("=", 1) for item in shlex.split(line))
                 case = re.search(r'case="([0-9]+)"', fields["labels"]).group(1)
                 output[int(case)] = fields
-            return output if len(output) == len(cases) else None
+            expected = sum(
+                not quiet or severity not in {"trace", "debug", "info"}
+                for _, _, severity in cases
+            )
+            return output if len(output) == expected else None
 
         output = self.wait_for(entries)
         for i, (_, body, severity) in enumerate(cases):
             with self.subTest(case=i):
+                if quiet and severity in {"trace", "debug", "info"}:
+                    self.assertNotIn(i, output)
+                    continue
                 self.assertIn('level="' + severity + '"', output[i]["labels"])
                 self.assertEqual(
                     json.loads(output[i]["structured_metadata"])["detected_level"],
