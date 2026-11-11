@@ -392,3 +392,28 @@ Production assembly uses ignored private deployment inputs; see [DEPLOY.md](DEPL
 The public contract contains no repository inventory or physical host list.
 `config.alloy` is the reusable public template. The runtime file is generated
 under `.generated/observability/` and supplied to Compose through Make.
+
+### Режим экономии ресурсов
+
+Настройки задаются отдельно в закрытом `.env` каждого хоста. По умолчанию
+частота и полнота логов сохраняются. Для менее подробного наблюдения:
+
+```dotenv
+ALLOY_SCRAPE_INTERVAL=60s
+ALLOY_LOG_DROP_LEVEL_REGEX=trace|debug|info
+ALLOY_CADVISOR_NETWORK_DISABLED=["disk","diskIO","tcp","udp","cpuLoad","percpu"]
+```
+
+Сбор раз в минуту даёт вчетверо меньше отсчётов, чем каждые 15 секунд;
+короткие пики будут видны хуже. cAdvisor продолжает внутренний сбор независимо
+от scrape, поэтому для снижения CPU отдельно отключаются дорогие необязательные
+категории. В примере сохраняются общие CPU, память и сетевой трафик контейнеров,
+но отсутствуют их подробные TCP/UDP, дисковые и покомпонентные CPU показатели.
+
+Фильтр логов применяется после нормализации severity всех сервисов. При указанном
+значении сохраняются `warn`, `error`, `fatal` и `unknown`; неизвестные сообщения
+не считаются безопасными для удаления. Отфильтрованные записи учитывает
+`loki_process_dropped_lines_total` с причиной `configured_low_priority`.
+Это сокращает отправку в Loki, но не запись исходных Docker-логов на диске.
+Вернуть прежнее поведение можно значениями `15s` и `disabled`; затем пересоздать
+только Alloy с сохранением его тома и очереди vmagent.

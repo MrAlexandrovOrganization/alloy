@@ -75,6 +75,8 @@ services:
       ALLOY_PROCFS_PATH: ${ALLOY_PROCFS_PATH:-/host/proc}
       ALLOY_ROOTFS_PATH: /rootfs
       ALLOY_DOCKER_DESKTOP: ${ALLOY_DOCKER_DESKTOP:-false}
+      ALLOY_SCRAPE_INTERVAL: ${ALLOY_SCRAPE_INTERVAL:-15s}
+      ALLOY_LOG_DROP_LEVEL_REGEX: '${ALLOY_LOG_DROP_LEVEL_REGEX:-disabled}'
       ALLOY_CADVISOR_NETWORK_DISABLED: '${ALLOY_CADVISOR_NETWORK_DISABLED:-["tcp","udp"]}'
     volumes:
       - ${ALLOY_CONFIG_FILE:-./config.alloy}:/etc/alloy/config.alloy:ro

@@ -22,6 +22,11 @@ command = shlex.split(os.environ.get("DOCKER", "docker")) + [
     "LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push",
     "-e",
     "PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write",
+    "-e",
+    "ALLOY_SCRAPE_INTERVAL=" + os.environ.get("ALLOY_SCRAPE_INTERVAL", "15s"),
+    "-e",
+    "ALLOY_LOG_DROP_LEVEL_REGEX="
+    + os.environ.get("ALLOY_LOG_DROP_LEVEL_REGEX", "disabled"),
     "-i",
     "--entrypoint",
     "sh",
