@@ -19,27 +19,27 @@ jobs:
       - name: Check formatting and configuration
         env:
           PROMETHEUS_REMOTE_WRITE_URL: http://127.0.0.1:19090/api/v1/write
-        run: make check
+        run: make check observability-release-check
 
   deploy:
-    name: Deploy to ${{ matrix.host }}
+    name: Deploy checked revision
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: validate
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true' && !contains(github.event.head_commit.message, '[resources-only]')
-    strategy:
-      fail-fast: false
-      matrix:
-        host: [server, hostkey-russia, hostkey-finland, private-test-server, wsl, asus-server]
     concurrency:
-      group: deploy-${{ github.repository }}-${{ matrix.host }}
+      group: deploy-${{ github.repository }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - name: Deploy checked revision and verify service
         run: make ci-deploy
         env:
-          DEPLOY_TARGET: ${{ matrix.host }}
+          DEPLOY_TRANSPORT_JSON: ${{ secrets.DEPLOY_TRANSPORT_JSON }}
           DEPLOY_SHA: ${{ github.sha }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          OBSERVABILITY_BUNDLE_1: ${{ secrets.OBSERVABILITY_BUNDLE_1 }}
+          OBSERVABILITY_BUNDLE_2: ${{ secrets.OBSERVABILITY_BUNDLE_2 }}
+          OBSERVABILITY_BUNDLE_3: ${{ secrets.OBSERVABILITY_BUNDLE_3 }}
+          OBSERVABILITY_BUNDLE_SHA256: ${{ secrets.OBSERVABILITY_BUNDLE_SHA256 }}

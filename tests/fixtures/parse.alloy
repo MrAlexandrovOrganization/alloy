@@ -1,0 +1,241 @@
+stage.match {
+	selector = `{service="fixture-store/fixture-store"} |~ "^level="`
+
+	stage.logfmt {
+		mapping = {
+			fixture_store_caller     = "caller",
+			fixture_store_message    = "msg",
+			fixture_store_status     = "status",
+			fixture_store_latency    = "latency",
+			fixture_store_query_type = "query_type",
+			fixture_store_found      = "found",
+		}
+	}
+
+	stage.regex {
+		source     = "fixture_store_caller"
+		expression = `^(?P<fixture_store_caller_file>[a-z_]+\.go):[0-9]+$`
+	}
+
+	stage.regex {
+		source     = "fixture_store_message"
+		expression = `^(?P<routine_index_operation>cleaning up unwanted indexes from table index_[0-9]+|uploading table index_[0-9]+|finished uploading table index_[0-9]+)$`
+	}
+
+	// Keep slow/failed queries and unexpected index operations visible.
+	stage.template {
+		source   = "logfmt_level"
+		template = `{{ if and (eq .Value "info") (or (and (eq .fixture_store_caller_file "metrics.go") (or (eq .fixture_store_query_type "stats") (eq .fixture_store_query_type "metric") (eq .fixture_store_query_type "limited")) (eq .fixture_store_status "200") (eq .fixture_store_latency "fast")) (and (eq .fixture_store_caller_file "table_manager.go") (eq .fixture_store_message "get or create table") (eq .fixture_store_found "true")) (and (eq .fixture_store_caller_file "index_set.go") .routine_index_operation)) }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+
+	// Match exact caller/message pairs, never words inside query or error text.
+	stage.template {
+		source   = "fixture_store_event"
+		template = `{{ .fixture_store_caller_file }}:{{ .fixture_store_message }}`
+	}
+
+	stage.regex {
+		source     = "fixture_store_event"
+		expression = `^(?P<routine_fixture_store_event>table\.go:listed files|compactor\.go:(compacting table|finished compacting table)|index_set\.go:removing source db files from storage|util\.go:(downloaded file|downloaded and extracted file)|marker\.go:no marks file found|(engine|roundtrip)\.go:executing query|checkpoint\.go:(attempting checkpoint for|starting checkpoint|atomic checkpoint finished|checkpoint done)|recalculate_owned_streams\.go:(starting recalculate owned streams job|completed recalculate owned streams job)|table_manager\.go:(query readiness setup completed|syncing tables|uploading tables)|composite_store_entry\.go:adjusting end timerange from future to now)$`
+	}
+
+	stage.template {
+		source   = "logfmt_level"
+		template = `{{ if and (eq .Value "info") .routine_fixture_store_event }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-rust/fixture-rust"}`
+
+	stage.regex {
+		expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})\s+(?P<text_level>TRACE|DEBUG|INFO|WARN|ERROR)\s+fixture-rust(::[A-Za-z0-9_]+)+:\s+`
+	}
+}
+
+stage.match {
+	selector = `{service=~"fixture-proxy(-private-test)?/(bridge|entry)"}`
+
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)? \[(?P<text_level>Debug|Info|Warning|Error|Fatal)\] `
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-router/fixture-router"}`
+
+	stage.regex {
+		expression = `^[+-][0-9]{4} [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<text_level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL|PANIC) (?P<singbox_message>.*)$`
+	}
+
+	stage.regex {
+		source     = "singbox_message"
+		expression = `^(\[[0-9]+ [^]]+\] )?(?P<routine_connection>(outbound/[^ ]+: outbound connection to|inbound/[^ ]+: inbound connection (from|to)) [^ ]+)$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if and (eq .Value "INFO") .routine_connection }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-agent/collector-tailnet"}`
+	// Tailscale has no native severity. Only these routine events have a policy;
+	// an unfamiliar event stays unknown so a new failure cannot become info.
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-broker/fixture-broker-ui"}`
+
+	stage.regex {
+		expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}\s+(?P<text_level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+\[`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-broker/fixture-broker"}`
+
+	stage.regex {
+		expression = `^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}\]\s+(?P<text_level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s+`
+	}
+
+	stage.regex {
+		expression = `^\[[^]]+\] INFO \[QuorumController id=[0-9]+\] (?P<routine_controller_stats>In the last [0-9]+ ms period, [0-9]+ controller events were completed, .* \(org\.apache\.fixture-broker\.controller\.EventPerformanceMonitor\))$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if and (eq .Value "INFO") .routine_controller_stats }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+
+	stage.regex {
+		expression = `^\[[^]]+\] INFO \[QuorumController id=[0-9]+\] (?P<routine_election>Periodic task (electUnclean|electPreferred) generated 0 records in [0-9]+ microseconds\. \(org\.apache\.fixture-broker\.controller\.PeriodicTaskControlManager\))\s*$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if and (eq .Value "INFO") .routine_election }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-cache/fixture-cache"}`
+
+	stage.regex {
+		expression = `^[0-9]+:[A-Z] [0-9]{2} [A-Z][a-z]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3} \* (?P<routine_fixture_cache_rdb>[0-9]+ changes in [0-9]+ seconds\. Saving\.\.\.|Background saving (started by pid [0-9]+|terminated with success)|Fork CoW for RDB: current [0-9]+ MB, peak [0-9]+ MB, average [0-9]+ MB|DB saved on disk)$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .routine_fixture_cache_rdb }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service=~"(ollama|fixture-models)/ollama"}`
+
+	stage.regex {
+		expression = `^\[GIN\] [0-9]{4}/[0-9]{2}/[0-9]{2} - [0-9]{2}:[0-9]{2}:[0-9]{2} \|\s*(?P<http_status>[1-5][0-9]{2})\s*\|[^|]+\|\s*(?P<http_client>[^ |]+)\s*\|\s*(?P<http_method>[A-Z]+)\s+"(?P<http_path>[^"]*)"\s*$`
+	}
+	// GIN has no severity: classify status, with successful local probes at debug.
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .http_status }}{{ if ge .http_status "500" }}error{{ else if ge .http_status "400" }}warn{{ else if and (ge .http_status "200") (lt .http_status "300") (or (eq .http_client "127.0.0.1") (eq .http_client "::1")) (or (and (eq .http_method "HEAD") (eq .http_path "/")) (and (eq .http_method "GET") (eq .http_path "/api/tags"))) }}debug{{ else }}info{{ end }}{{ else }}unknown{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-app/fixture-app-tailnet"}`
+	// Tailscale has no native severity. Only these routine events have a policy;
+	// an unfamiliar event stays unknown so a new failure cannot become info.
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-edge/headscale"}`
+
+	stage.regex {
+		expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+ (?P<text_level>TRC|DBG|INF|WRN|ERR|FTL|PNC) `
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-audio/rabbitmq"}`
+
+	stage.regex {
+		expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+[+-][0-9]{2}:[0-9]{2} \[(?P<text_level>debug|info|notice|warning|error|critical|alert|emergency)\] `
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-workers/worker-tailnet"}`
+	// Tailscale has no native severity. Only these routine events have a policy;
+	// an unfamiliar event stays unknown so a new failure cannot become info.
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-runners/runner"}`
+
+	stage.regex {
+		expression = `^\[(RUNNER|WORKER) [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}Z (?P<text_level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL) [^]]+\] `
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-bot/fixture-bot"}`
+
+	stage.regex {
+		expression = `^\[[A-Z][a-z]{2} [A-Z][a-z]{2} +[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [A-Za-z0-9_+:/-]+ [0-9]{4}\] (?P<text_level>DEBUG|INFO|WARN|WARNING|ERROR|FATAL) `
+	}
+}
+
+stage.match {
+	selector = `{service=~"fixture-notes/(core|mobile|web|search|notifications|telegram)"}`
+	// Go OTel's error handler is separate from the application's JSON logger.
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<otel_export_failure>traces export: .+)$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .otel_export_failure }}error{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-ui/fixture-ui-tailnet"}`
+	// Tailscale has no native severity. Only these routine events have a policy;
+	// an unfamiliar event stays unknown so a new failure cannot become info.
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}

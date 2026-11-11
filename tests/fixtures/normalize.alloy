@@ -1,0 +1,14 @@
+stage.match {
+	selector = `{service="fixture-app/fixture-app"} |~ "^\\s*\\{"`
+
+	stage.json {
+		expressions = {
+			fixture_app_message = "body || msg",
+		}
+	}
+
+	stage.template {
+		source   = "normalized_level"
+		template = `{{ if and (eq .Value "info") (eq .fixture_app_message "embedding backfill: processing") }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}

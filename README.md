@@ -13,8 +13,7 @@ Compose, formatting checks and CI use these values through Make. Use
 ## Host identity and persistent state
 
 `make` exports `ALLOY_HOST`, defaulting to the machine's hostname. Set it in the
-local `.env` (for example `ALLOY_HOST=server`, `ALLOY_HOST=hostkey-russia`, or
-`ALLOY_HOST=wsl`) to use stable inventory names. Direct Compose commands must
+local `.env` (for example `ALLOY_HOST=collector-a`) to use stable inventory names. Direct Compose commands must
 provide `ALLOY_HOST` as well as the image version.
 
 New Docker log streams include `host` and `service`. Service selection is:
@@ -25,7 +24,7 @@ New Docker log streams include `host` and `service`. Service selection is:
 
 Existing `container`, `compose_service`, `compose_project`, `job`, and `level`
 labels remain available. Historical streams are not relabeled. For example,
-query `{host="server", service="notes-bot/core"}` for newly collected logs.
+query `{host="collector-a", service="example/api"}` for newly collected logs.
 No `environment` label is added.
 
 Alloy explicitly uses `--storage.path=/var/lib/alloy/data`, matching the
@@ -304,7 +303,7 @@ available for recovery if the test process itself is killed while disconnected.
 in the configured backends. If the Loki Docker alias is not resolvable from the
 host shell, set `LOKI_QUERY_URL` to its tailnet or loopback URL for this check.
 
-Automatic SSH delivery through Hostkey Russia targets all six collectors after
+Automatic SSH delivery uses the private target policy after
 CI validation. It uses separate repository keys, pinned SSH host keys and a
 forced receiver that activates the exact checked commit. `DEPLOY_ENABLED`
 controls activation; [DEPLOY.md](DEPLOY.md) documents bootstrap and recovery.
@@ -479,7 +478,7 @@ replay an already accepted non-idempotent write just to get rid of an error.
 When Mac/WSL inference is unavailable, leave jobs queued; no model fallback on
 Russia or activation of retired stacks is part of this work.
 
-Alloy's current CI deployment matrix covers six remote hosts and excludes Mac.
+CI delivery destinations are defined in the private deployment policy.
 The prepared source is in the separate `log-recovery/alloy`
 checkout, branch `codex/log-severity-audit`, based on deployed `d15facb`.
 The original Mac checkout was restored to `codex/macbook-container-metrics`,
@@ -492,3 +491,42 @@ After an authorized CI/CD rollout, compare fresh 15-minute/one-hour counts by
 host/service/level, check unknown samples and actual queue recovery, and find a
 new span in Jaeger. Inventory and collector freshness must be checked separately:
 zero errors with missing telemetry is not success. Notifications were not enabled.
+
+## Active host inventory, 11 November 2026
+
+`server` and `private-test-server` are permanently stopped and retired by the
+owner. They are not expected collection or delivery targets. The workflow and
+client allowlist contain only `hostkey-russia`, `hostkey-finland`, `wsl` and
+`asus-server`; Mac collection uses its existing separate Colima setup. The
+historical queue budgets, migration procedures and audit records above do not
+make retired hosts active or require restoring them.
+
+On Russia, `clip-embedder` is a coordinator: gRPC routing, durable queue,
+worker registration and result delivery. Model inference belongs to Mac/WSL
+workers. Its coordinator still needs health monitoring because its failure can
+prevent requests from reaching healthy workers. No local inference/fallback
+worker is to be enabled on Russia.
+
+## Настройки наблюдаемости
+
+`monitoring/observability.json` описывает только компоненты и ресурсы этого
+проекта: правила разбора логов, targets метрик и дашборды. Стандартные JSON/logfmt
+логи и метрики контейнеров собираются общими средствами; пустой список ресурсов
+не отключает общий сбор.
+
+`make observability-check` проверяет пакет без сети, Docker и соседних checkout
+(Python 3.9+). `make observability-export` создаёт `.observability/package.tar`;
+CI публикует его как artifact. Экспорт содержит явно перечисленные файлы,
+ревизию и SHA-256. Незакоммиченные ресурсы помечаются `source_state=worktree`.
+Приватные `.env`, credentials и карта инфраструктуры в экспорт не входят.
+
+В ресурсах задаётся логическое размещение `local` (сбор метрик рядом с сервисом)
+или `central` (центральные провайдеры). Физическое размещение и набор других
+пакетов задаются закрытой конфигурацией доставки. Сборщик строит итоговый файл
+из закреплённых экспортов; обычная сборка этого проекта не зависит от них.
+Копия Python-инструмента закреплена SHA-256 в `monitoring/tool.lock.json`.
+
+Production assembly uses ignored private deployment inputs; see [DEPLOY.md](DEPLOY.md).
+The public contract contains no repository inventory or physical host list.
+`config.alloy` is the reusable public template. The runtime file is generated
+under `.generated/observability/` and supplied to Compose through Make.

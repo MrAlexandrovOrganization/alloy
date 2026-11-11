@@ -5,6 +5,7 @@ DOCKER ?= docker
 PRE_COMMIT ?= pre-commit
 NETS = loki-net prometheus-net caddy-metrics-net
 CONFIG ?= config.alloy
+ALLOY_CONFIG_FILE ?= $(CURDIR)/.generated/observability/config.alloy
 TEST_PATTERN ?= test*.py
 
 -include .env
@@ -63,12 +64,12 @@ format format-check:
 		diff -u "$(CONFIG)" "$$formatted"; \
 	fi
 
-config-check:
+config-check: observability-generate
 	sh -n scripts/start.sh
 	$(DOCKER_COMPOSE) config -q
 	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.network-metrics.yml config -q
 	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 $(DOCKER_COMPOSE_BASE) -f compose/docker-compose.yml -f compose/compose.resources.yml -f compose/compose.network-metrics.yml config -q
-	$(DOCKER) run --rm --network none -e ALLOY_HOST=validation -e ALLOY_PROCFS_PATH=/proc -e ALLOY_ROOTFS_PATH=/rootfs -e LOKI_PUSH_URL=http://127.0.0.1:3100/loki/api/v1/push -e PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write -i --entrypoint sh grafana/alloy:$(ALLOY_VERSION) -c 'cat > /tmp/check.alloy; /bin/alloy validate /tmp/check.alloy' < "$(CONFIG)"
+	python3 scripts/validate_alloy.py "$(ALLOY_CONFIG_FILE)"
 
 test:
 	python3 -m unittest discover -s tests -p "$(TEST_PATTERN)" -v
@@ -105,3 +106,10 @@ compose-layout-check:
 	HOST_NETWORK_METRICS_ADDRESS=100.64.0.5:19100 HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/alloy-compose-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml -f compose/compose.network-metrics.yml --profile '*' config --no-env-resolution --quiet
 
 check: compose-layout-check
+
+include makefiles/observability.mk
+
+.PHONY: collector-vm-check
+collector-vm-check:
+	HEADSCALE_URL=https://headscale.invalid MONITORING_DATA_DIR=/tmp/collector-check PROMETHEUS_REMOTE_WRITE_URL=http://127.0.0.1:9090/api/v1/write $(DOCKER_COMPOSE_BASE) --env-file /dev/null -f compose/docker-compose.yml -f compose/compose.colima.yml --profile '*' config --no-env-resolution --quiet
+check: collector-vm-check

@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "service": "alloy",
+  "components": [
+    "alloy/*"
+  ],
+  "logs": [
+    {
+      "file": "monitoring/alloy/logs.alloy",
+      "phase": "parse",
+      "order": 30
+    }
+  ],
+  "assets": []
+}

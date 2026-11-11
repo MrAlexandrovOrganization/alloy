@@ -1,0 +1,310 @@
+// Grafana Alloy: collects logs of all Docker containers on the host and
+// ships them to Loki. New containers are picked up automatically.
+discovery.docker "host" {
+	host = "unix:///var/run/docker.sock"
+}
+
+loki.relabel "docker" {
+	forward_to = []
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	// Fall back to the container name for containers outside Compose.
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "service"
+	}
+
+	// Compose service names alone (e.g. "app") are not unique across projects.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project", "__meta_docker_container_label_com_docker_compose_service"]
+		separator     = "/"
+		regex         = "(.+)/(.+)"
+		replacement   = "$1/$2"
+		target_label  = "service"
+	}
+
+	// Applications may opt into a canonical name shared with their metrics.
+	rule {
+		source_labels = ["__meta_docker_container_label_observability_service"]
+		regex         = "(.+)"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project_working_dir"]
+		target_label  = "compose_project"
+	}
+}
+
+loki.source.docker "containers" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.docker.host.targets
+	forward_to    = [loki.process.docker.receiver]
+	relabel_rules = loki.relabel.docker.rules
+	labels        = {job = "docker", host = sys.env("ALLOY_HOST")}
+}
+
+loki.process "docker" {
+	forward_to = [loki.write.loki.receiver]
+
+	stage.decolorize { }
+
+	stage.drop {
+		older_than = "1h"
+	}
+
+	stage.match {
+		selector = `{container=~".+"} |~ "^\\s*\\{"`
+
+		stage.json {
+			expressions = {
+				timestamp      = "timestamp",
+				observed_time  = "observed_timestamp",
+				severity_text  = "severity_text",
+				severity_level = "level",
+				trace_id       = "trace_id",
+				span_id        = "span_id",
+			}
+		}
+	}
+
+	stage.match {
+		selector = `{container=~".+"} |~ "^\\s*[A-Za-z_][A-Za-z0-9_.-]*="`
+
+		stage.logfmt {
+			mapping = {
+				logfmt_timestamp = "ts",
+				logfmt_level     = "level",
+				logfmt_trace_id  = "trace_id",
+				logfmt_span_id   = "span_id",
+			}
+		}
+	}
+
+	stage.match {
+		// PostgreSQL prefixes are unambiguous, including standalone test containers.
+		selector = `{container=~".+"} |~ "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]+ [A-Za-z0-9_+:/-]+ \\[[0-9]+\\] "`
+
+		stage.regex {
+			expression = `^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+ [A-Za-z0-9_+:/-]+ \[[0-9]+\] (?P<text_level>DEBUG[1-5]?|INFO|NOTICE|LOG|WARNING|ERROR|FATAL|PANIC):\s+(?P<postgres_message>.*)$`
+		}
+
+		stage.regex {
+			source     = "postgres_message"
+			expression = `^(?P<routine_checkpoint>checkpoint starting: time|checkpoint complete: wrote [0-9]+ buffers .*total=[0-9.]+ s; .*)$`
+		}
+
+		stage.template {
+			source   = "text_level"
+			template = `{{ if eq .Value "LOG" }}{{ if .routine_checkpoint }}debug{{ else }}info{{ end }}{{ else if or (eq .Value "DEBUG1") (eq .Value "DEBUG2") (eq .Value "DEBUG3") (eq .Value "DEBUG4") (eq .Value "DEBUG5") }}debug{{ else }}{{ .Value }}{{ end }}`
+		}
+	}
+
+	// Explicit levels in infrastructure formats that do not use JSON/logfmt.
+
+	// @service-stages:parse@
+
+	// Prefer explicit JSON severity, then legacy JSON, logfmt and scoped text formats.
+	stage.template {
+		source   = "normalized_level"
+		template = `{{ if .severity_text }}{{ ToLower (TrimSpace .severity_text) }}{{ else if .severity_level }}{{ ToLower (TrimSpace .severity_level) }}{{ else if .logfmt_level }}{{ ToLower (TrimSpace .logfmt_level) }}{{ else if .text_level }}{{ ToLower (TrimSpace .text_level) }}{{ else }}unknown{{ end }}`
+	}
+
+	// Bound label cardinality and reconcile Python/syslog severity aliases.
+	stage.template {
+		source   = "normalized_level"
+		template = `{{ if eq .Value "trc" }}trace{{ else if eq .Value "dbg" }}debug{{ else if eq .Value "inf" }}info{{ else if eq .Value "wrn" }}warn{{ else if or (eq .Value "ftl") (eq .Value "pnc") }}fatal{{ else if eq .Value "warning" }}warn{{ else if or (eq .Value "critical") (eq .Value "crit") (eq .Value "panic") (eq .Value "emerg") (eq .Value "emergency") (eq .Value "alert") }}fatal{{ else if eq .Value "err" }}error{{ else if or (eq .Value "notice") (eq .Value "information") (eq .Value "informational") }}info{{ else if or (eq .Value "trace") (eq .Value "debug") (eq .Value "info") (eq .Value "warn") (eq .Value "error") (eq .Value "fatal") }}{{ .Value }}{{ else }}unknown{{ end }}`
+	}
+
+	// @service-stages:normalize@
+
+	stage.labels {
+		values = {
+			level = "normalized_level",
+		}
+	}
+
+	stage.structured_metadata {
+		values = {
+			// Use the same severity for Loki detection and stream selectors.
+			detected_level = "normalized_level",
+			trace_id       = "trace_id",
+			span_id        = "span_id",
+		}
+	}
+}
+
+loki.write "loki" {
+	endpoint {
+		url = sys.env("LOKI_PUSH_URL")
+	}
+}
+
+// Scrape locally so a central receiver outage does not interrupt collection.
+prometheus.exporter.unix "host" {
+	procfs_path = sys.env("ALLOY_PROCFS_PATH")
+	sysfs_path  = "/sys"
+	rootfs_path = sys.env("ALLOY_ROOTFS_PATH")
+
+	// The existing VPN watchdog publishes only bounded, non-secret health metrics.
+	textfile {
+		directory = sys.env("ALLOY_TEXTFILE_DIRECTORY")
+	}
+}
+
+prometheus.exporter.cadvisor "containers" {
+	// Preserve the defaults elsewhere; VPN hosts opt in to per-container TCP/UDP.
+	disabled_metrics             = array.concat(["advtcp", "cpu_topology", "cpuset", "hugetlb", "memory_numa", "process", "referenced_memory", "resctrl", "sched"], encoding.from_json(coalesce(sys.env("ALLOY_CADVISOR_NETWORK_DISABLED"), "[\"tcp\",\"udp\"]")))
+	docker_only                  = true
+	store_container_labels       = false
+	allowlisted_container_labels = ["com.docker.compose.project", "com.docker.compose.service", "observability.service"]
+}
+
+prometheus.scrape "host" {
+	targets         = prometheus.exporter.unix.host.targets
+	job_name        = "node"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.relabel.host.receiver]
+}
+
+prometheus.relabel "host" {
+	forward_to = [prometheus.remote_write.central.receiver]
+
+	rule {
+		target_label = "job"
+		replacement  = "node"
+	}
+
+	rule {
+		target_label = "instance"
+		replacement  = sys.env("ALLOY_HOST")
+	}
+
+	rule {
+		target_label = "service"
+		replacement  = "linux"
+	}
+}
+
+prometheus.scrape "containers" {
+	targets         = prometheus.exporter.cadvisor.containers.targets
+	job_name        = "cadvisor"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.relabel.containers.receiver]
+}
+
+prometheus.relabel "containers" {
+	forward_to = [prometheus.remote_write.central.receiver]
+
+	rule {
+		target_label = "job"
+		replacement  = "cadvisor"
+	}
+
+	rule {
+		target_label = "instance"
+		replacement  = sys.env("ALLOY_HOST")
+	}
+
+	rule {
+		target_label = "service"
+		replacement  = "docker"
+	}
+
+	rule {
+		source_labels = ["name"]
+		regex         = "/?(.+)"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["container_label_com_docker_compose_project", "container_label_com_docker_compose_service"]
+		separator     = "/"
+		regex         = "(.+)/(.+)"
+		replacement   = "$1/$2"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["container_label_observability_service"]
+		regex         = "(.+)"
+		target_label  = "service"
+	}
+}
+
+discovery.file "services" {
+	files            = ["/etc/alloy/targets/*.yml", "/etc/alloy/targets/*.json"]
+	refresh_interval = "30s"
+}
+
+discovery.relabel "services" {
+	targets = discovery.file.services.targets
+
+	rule {
+		source_labels = ["service"]
+		target_label  = "__tmp_service"
+	}
+
+	rule {
+		source_labels = ["__address__"]
+		regex         = "([^:]+)(:.*)?"
+		target_label  = "service"
+	}
+
+	rule {
+		source_labels = ["__tmp_service"]
+		regex         = "(.+)"
+		target_label  = "service"
+	}
+}
+
+prometheus.scrape "services" {
+	targets         = discovery.relabel.services.output
+	job_name        = "services"
+	honor_labels    = true
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.scrape "self" {
+	targets         = [{"__address__" = "127.0.0.1:12345", "instance" = sys.env("ALLOY_HOST"), "service" = "alloy"}]
+	job_name        = "alloy"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.scrape "queue" {
+	targets         = [{"__address__" = "alloy-queue-sink:8429", "instance" = sys.env("ALLOY_HOST"), "service" = "vmagent"}]
+	job_name        = "vmagent"
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.remote_write "central" {
+	external_labels = {host = sys.env("ALLOY_HOST")}
+
+	endpoint {
+		url = sys.env("PROMETHEUS_REMOTE_WRITE_URL")
+
+		queue_config {
+			max_shards = 4
+		}
+	}
+
+	wal {
+		truncate_frequency = "1h"
+		min_keepalive_time = "5m"
+		max_keepalive_time = "24h"
+	}
+}

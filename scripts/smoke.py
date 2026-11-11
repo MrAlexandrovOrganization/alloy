@@ -21,10 +21,13 @@ def decode(response):
 
 def query(base, expression, **params):
     url = base + "?" + urllib.parse.urlencode({"query": expression, **params})
+    if os.environ.get("QUERY_CONTAINER"):
+        from receiver_http import read_url
+        return json.loads(read_url(url))["data"]["result"]
     headers = {"Accept-Encoding": "gzip"}
     mss = int(os.environ.get("READINESS_TCP_MSS", "0"))
     if mss:
-        # Native VM→WSL HTTP needs smaller SYN MSS on the measured path.
+        # Some private receiver routes need a smaller SYN MSS.
         # Scope this to the private IPv4 tailnet; no host routes/sysctls change.
         parsed = urllib.parse.urlsplit(url)
         if (parsed.scheme != "http" or parsed.username is not None or parsed.password is not None
