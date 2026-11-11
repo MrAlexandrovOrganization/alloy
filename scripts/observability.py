@@ -310,7 +310,12 @@ def generate(collector, output, check=False, public=False):
 
 
 def install(collector, output, root, host):
-    if host not in deployment(Path(collector).resolve())["hosts"]:
+    collector = Path(collector).resolve()
+    if (inputs_root(collector) / "deployment.json").exists() and host not in deployment(collector)["hosts"]:
+        raise ValueError("Refusing to install for an inactive host")
+    if not (inputs_root(collector) / "services.lock.json").exists():
+        return 0  # Standalone public template has no private service assets.
+    if host not in deployment(collector)["hosts"]:
         raise ValueError("Refusing to install for an inactive host")
     root = Path(root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -357,10 +362,14 @@ def install_locked(collector, root, host):
     }
     obsolete = (set(previous["files"]) | set(retired)) - set(selected)
     backup = {}
+    backup_owners = {}
     for name in sorted(set(selected) | obsolete):
         path = destination(name)
         old = path.read_bytes() if path.exists() else None
         backup[name] = old
+        if old is not None:
+            info = path.stat()
+            backup_owners[name] = (info.st_uid, info.st_gid)
         accepted = {previous["files"].get(name)}
         accepted.update(retired.get(name, []))
         if name in selected:
@@ -369,6 +378,7 @@ def install_locked(collector, root, host):
         if old is not None and digest(old) not in accepted:
             raise ValueError("Unmanaged or locally edited observability file: " + name)
     old_ledger = ledger.read_bytes() if ledger.exists() else None
+    owner = (root.stat().st_uid, root.stat().st_gid)
     try:
         for name, data in selected.items():
             path = root / name
@@ -381,11 +391,13 @@ def install_locked(collector, root, host):
             for parent in reversed(missing):
                 parent.mkdir(mode=0o755)
                 parent.chmod(0o755)
+                os.chown(parent, *owner)
             parent = path.parent
             while parent != root:
                 parent.chmod(0o755)
                 parent = parent.parent
             atomic(path, data)
+            os.chown(path, *owner)
         for name in obsolete:
             (root / name).unlink(missing_ok=True)
         atomic(
@@ -404,6 +416,7 @@ def install_locked(collector, root, host):
                 (root / name).unlink(missing_ok=True)
             else:
                 atomic(root / name, data)
+                os.chown(root / name, *backup_owners[name])
         if old_ledger is None:
             ledger.unlink(missing_ok=True)
         else:

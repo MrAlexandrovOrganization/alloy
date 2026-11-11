@@ -43,6 +43,11 @@ def main():
         return
     if not info["State"]["Running"]:
         raise SystemExit("Old direct writer is stopped; restore and drain it before switching")
+    if environment.get("PROMETHEUS_REMOTE_WRITE_URL") == "http://alloy-queue-sink:8429/api/v1/write":
+        # The destination and component identity are unchanged. Graceful
+        # recreation replays the existing WAL; a busy queue need not reach zero.
+        print("Unchanged local destination; retaining Alloy WAL and vmagent backlog")
+        return
     for _ in range(60):
         metrics = read_metrics(docker, ids[0])
         pending = [float(line.split()[-1]) for line in metrics.splitlines()

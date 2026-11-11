@@ -38,6 +38,14 @@ class QueueMigration(unittest.TestCase):
             migration.main()
             self.assertEqual(docker.call_count, 3)  # Only Alloy's first hop is checked.
 
+    def test_unchanged_local_destination_replays_wal_without_waiting_for_zero(self):
+        with patch.object(migration.subprocess, "check_output", side_effect=[
+            "container\n", self.info("http://alloy-queue-sink:8429/api/v1/write"),
+        ]) as docker, patch.object(migration, 'read_metrics') as metrics:
+            migration.main()
+            self.assertEqual(docker.call_count, 2)
+            metrics.assert_not_called()
+
     def test_refuses_to_switch_if_queue_does_not_drain(self):
         pending = 'prometheus_remote_storage_samples_pending{remote_name="central"} 100\n'
         with patch.object(migration.subprocess, "check_output", side_effect=["container\n", self.info()] + [pending] * 60), patch.object(migration.time, "sleep"):

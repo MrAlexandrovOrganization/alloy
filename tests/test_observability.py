@@ -131,6 +131,21 @@ class Packages(unittest.TestCase):
         self.assertEqual(json.loads((live / 'observability-managed.json').read_text())['host'], 'node-a')
         assembly.install(self.collector, None, live, 'node-a')
 
+    def test_root_deployment_preserves_monitoring_directory_owner(self):
+        self.pin()
+        live = (self.root / 'live').resolve()
+        live.mkdir()
+        real_stat = Path.stat
+        def stat(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            if path == live:
+                fields = list(result);fields[4:6] = [4242, 4343]
+                return os.stat_result(fields)
+            return result
+        with patch.object(Path, 'stat', stat), patch.object(assembly.os, 'chown') as chown:
+            assembly.install(self.collector, None, live, 'node-a')
+        chown.assert_any_call(live / 'prometheus-targets/fixture.json', 4242, 4343)
+
     def test_write_failure_rolls_back_previous_assets(self):
         self.pin()
         live = self.root / 'live'

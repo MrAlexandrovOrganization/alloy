@@ -17,7 +17,7 @@ observability-generate:
 	python3 scripts/observability.py generate --output "$(OBSERVABILITY_OUTPUT)"
 observability-generated-check:
 	python3 scripts/observability.py generated-check --public
-observability-install: observability-generated-check
+observability-install: observability-generated-check observability-generate
 	python3 scripts/observability.py install --output "$(OBSERVABILITY_OUTPUT)" --monitoring-root "$(MONITORING_DATA_DIR)" --host "$(OBSERVABILITY_HOST)"
 check config-check: observability-generated-check
 format: observability-public-generate
