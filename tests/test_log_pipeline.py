@@ -323,6 +323,11 @@ loki.source.api "fixture" {
                 "warn",
             ),
             ("fixture-models/ollama", "unfamiliar runner output", "unknown"),
+            (
+                "fixture-agent/collector-tailnet",
+                r'2026/11/10 21:00:00 [RATELIMIT] format("control: [v\x00JSON]%d%s") (16 dropped)',
+                "debug",
+            ),
             ("any/service", '{"level":99,"msg":"test"}', "unknown"),
             ("any/service", "the message mentions error but has no level", "unknown"),
         ]
