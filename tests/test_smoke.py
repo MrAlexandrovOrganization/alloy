@@ -47,7 +47,7 @@ class DeliverySmokeTests(unittest.TestCase):
             "HOST_NETWORK_METRICS_ADDRESS": "100.64.0.99:19100",
             "READINESS_TCP_MSS": "0",
         }
-        with patch.dict(os.environ, environment), patch("urllib.request.urlopen", side_effect=request), \
+        with patch.dict(os.environ, environment, clear=True), patch("urllib.request.urlopen", side_effect=request), \
                 patch("time.time", return_value=10000), patch("time.sleep"), patch("builtins.print"):
             self.namespace = runpy.run_path(str(SCRIPT), run_name="__main__")
         return requests
@@ -85,7 +85,7 @@ class DeliverySmokeTests(unittest.TestCase):
         response = io.BytesIO(b'{"data":{"result":[]}}')
         response.headers = {}
         response.status = 200
-        with patch.dict(os.environ, {"READINESS_TCP_MSS": "1000"}), \
+        with patch.dict(os.environ, {"READINESS_TCP_MSS": "1000"}, clear=True), \
                 patch("socket.socket") as socket_factory, patch("http.client.HTTPConnection") as connection:
             connection.return_value.getresponse.return_value = response
             result = self.namespace["query"]("http://100.64.0.3:9090/api/v1/query", "up")
@@ -98,7 +98,7 @@ class DeliverySmokeTests(unittest.TestCase):
 
     def test_mss_opt_in_refuses_public_or_tls_endpoints_before_connecting(self):
         self.run_smoke()
-        with patch.dict(os.environ, {"READINESS_TCP_MSS": "1000"}), patch("socket.socket") as socket_factory:
+        with patch.dict(os.environ, {"READINESS_TCP_MSS": "1000"}, clear=True), patch("socket.socket") as socket_factory:
             for endpoint in ("http://203.0.113.1:9090", "https://100.64.0.3:9090", "http://user:secret@100.64.0.3:9090"):
                 with self.assertRaises(ValueError):
                     self.namespace["query"](endpoint, "up")

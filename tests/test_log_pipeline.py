@@ -242,6 +242,87 @@ loki.source.api "fixture" {
                 "2026/11/10 21:00:00 netcheck: UDP is blocked, trying ICMP",
                 "unknown",
             ),
+            (
+                "fixture-agent/collector-tailnet",
+                "2026/11/10 21:00:00 netcheck: DetectCaptivePortal(found=false)",
+                "debug",
+            ),
+            (
+                "fixture-ui/fixture-ui-tailnet",
+                "2026/11/10 21:00:00 netcheck: DetectCaptivePortal(found=true)",
+                "unknown",
+            ),
+            (
+                "fixture-gateway/gateway",
+                "1794359159.337206 notice redsocks.c:958 connected(...) Host is unreachable",
+                "warn",
+            ),
+            (
+                "fixture-gateway/gateway",
+                "1794359159.337206 notice utils.c:223 connected",
+                "info",
+            ),
+            (
+                "fixture-gateway/gateway",
+                "1794359159.337206 error utils.c:223 broken",
+                "error",
+            ),
+            (
+                "another/service",
+                "1794359159.337206 notice utils.c:223 connected",
+                "unknown",
+            ),
+            (
+                "fixture-broker/kafka",
+                "retention (604800000) (kafka.raft.KafkaMetadataLog)",
+                "info",
+            ),
+            (
+                "fixture-broker/kafka",
+                "retention failed (kafka.raft.KafkaMetadataLog)",
+                "unknown",
+            ),
+            (
+                "fixture-agent/collector-tailnet",
+                "2026/11/10 21:00:00 Received error: PollNetMap: connection refused",
+                "warn",
+            ),
+            (
+                "fixture-agent/collector-tailnet",
+                "2026/11/10 21:00:00 [RATELIMIT] format(synthetic)",
+                "warn",
+            ),
+            (
+                "fixture-agent/collector-tailnet",
+                "2026/11/10 21:00:00 magicsock: derp-1 connected; connGen=2",
+                "debug",
+            ),
+            (
+                "fixture-models/ollama",
+                "slot update_slots: id  0 | task 0 | cached n_tokens = 15",
+                "debug",
+            ),
+            (
+                "fixture-models/ollama",
+                "llama_model_loader: loaded meta data with 58 key-value pairs",
+                "debug",
+            ),
+            (
+                "fixture-models/ollama",
+                "load_tensors: failed to allocate tensor",
+                "error",
+            ),
+            (
+                "fixture-models/ollama",
+                "srv  log_server_r: done request: POST /completion 127.0.0.1 503",
+                "error",
+            ),
+            (
+                "fixture-models/ollama",
+                "load: control-looking token; this is probably a bug in the model",
+                "warn",
+            ),
+            ("fixture-models/ollama", "unfamiliar runner output", "unknown"),
             ("any/service", '{"level":99,"msg":"test"}', "unknown"),
             ("any/service", "the message mentions error but has no level", "unknown"),
         ]

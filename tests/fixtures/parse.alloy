@@ -84,12 +84,16 @@ stage.match {
 	// Tailscale has no native severity. Only these routine events have a policy;
 	// an unfamiliar event stays unknown so a new failure cannot become info.
 	stage.regex {
-		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: ((netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|DetectCaptivePortal\(found=false\))|magicsock: (new contact: .+|derp-[0-9]+ connected; connGen=[0-9]+)|derphttp\.Client\.(Recv|Send): connecting to derp-[0-9]+ \([^)]*\)|control: (controlhttp: forcing port 443 dial due to recent noise dial|trying bootstrapDNS\(.+ \.\.\.|NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_retry_warning>(Received error: .+|control: (map response long-poll timed out!|lite map update error after .+|bootstrapDNS\(.+ error: .+)|magicsock: (.*(context deadline exceeded|connect: .+|no such host)|derp-[0-9]+ does not know about peer .+, removing route)|open-conn-track: timeout opening .+|\[RATELIMIT\] .+))$`
 	}
 
 	stage.template {
 		source   = "text_level"
-		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+		template = `{{ if .tailnet_retry_warning }}warn{{ else if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
 	}
 }
 
@@ -158,12 +162,16 @@ stage.match {
 	// Tailscale has no native severity. Only these routine events have a policy;
 	// an unfamiliar event stays unknown so a new failure cannot become info.
 	stage.regex {
-		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: ((netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|DetectCaptivePortal\(found=false\))|magicsock: (new contact: .+|derp-[0-9]+ connected; connGen=[0-9]+)|derphttp\.Client\.(Recv|Send): connecting to derp-[0-9]+ \([^)]*\)|control: (controlhttp: forcing port 443 dial due to recent noise dial|trying bootstrapDNS\(.+ \.\.\.|NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_retry_warning>(Received error: .+|control: (map response long-poll timed out!|lite map update error after .+|bootstrapDNS\(.+ error: .+)|magicsock: (.*(context deadline exceeded|connect: .+|no such host)|derp-[0-9]+ does not know about peer .+, removing route)|open-conn-track: timeout opening .+|\[RATELIMIT\] .+))$`
 	}
 
 	stage.template {
 		source   = "text_level"
-		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+		template = `{{ if .tailnet_retry_warning }}warn{{ else if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
 	}
 }
 
@@ -188,12 +196,16 @@ stage.match {
 	// Tailscale has no native severity. Only these routine events have a policy;
 	// an unfamiliar event stays unknown so a new failure cannot become info.
 	stage.regex {
-		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: ((netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|DetectCaptivePortal\(found=false\))|magicsock: (new contact: .+|derp-[0-9]+ connected; connGen=[0-9]+)|derphttp\.Client\.(Recv|Send): connecting to derp-[0-9]+ \([^)]*\)|control: (controlhttp: forcing port 443 dial due to recent noise dial|trying bootstrapDNS\(.+ \.\.\.|NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_retry_warning>(Received error: .+|control: (map response long-poll timed out!|lite map update error after .+|bootstrapDNS\(.+ error: .+)|magicsock: (.*(context deadline exceeded|connect: .+|no such host)|derp-[0-9]+ does not know about peer .+, removing route)|open-conn-track: timeout opening .+|\[RATELIMIT\] .+))$`
 	}
 
 	stage.template {
 		source   = "text_level"
-		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+		template = `{{ if .tailnet_retry_warning }}warn{{ else if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
 	}
 }
 
@@ -231,11 +243,71 @@ stage.match {
 	// Tailscale has no native severity. Only these routine events have a policy;
 	// an unfamiliar event stays unknown so a new failure cannot become info.
 	stage.regex {
-		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: (netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|magicsock: new contact: .+|control: (NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_routine>(netcheck: ((netcheck: )?UDP is blocked, trying (ICMP|HTTPS)|DetectCaptivePortal\(found=false\))|magicsock: (new contact: .+|derp-[0-9]+ connected; connGen=[0-9]+)|derphttp\.Client\.(Recv|Send): connecting to derp-[0-9]+ \([^)]*\)|control: (controlhttp: forcing port 443 dial due to recent noise dial|trying bootstrapDNS\(.+ \.\.\.|NetInfo: .+|controlclient direct: (updating discoKey for .+ via mapSession|got TSMP disco key advertisement from .+ via eventbus))))$`
+	}
+
+	stage.regex {
+		expression = `^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} (?P<tailnet_retry_warning>(Received error: .+|control: (map response long-poll timed out!|lite map update error after .+|bootstrapDNS\(.+ error: .+)|magicsock: (.*(context deadline exceeded|connect: .+|no such host)|derp-[0-9]+ does not know about peer .+, removing route)|open-conn-track: timeout opening .+|\[RATELIMIT\] .+))$`
 	}
 
 	stage.template {
 		source   = "text_level"
-		template = `{{ if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+		template = `{{ if .tailnet_retry_warning }}warn{{ else if .tailnet_routine }}debug{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-gateway/gateway"}`
+	// Redsocks supplies an explicit syslog level before its source location.
+	stage.regex {
+		expression = `^[0-9]+\.[0-9]+ (?P<text_level>debug|info|notice|warning|warn|err|error|crit|alert|emerg) [A-Za-z0-9_./-]+:[0-9]+ .*$`
+	}
+	// A failed proxy connection needs attention even when upstream calls it notice.
+	stage.regex {
+		expression = `^[0-9]+\.[0-9]+ notice .*(?P<proxy_connection_failed>Host is unreachable|Network is unreachable|Connection refused|Connection timed out).*$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .proxy_connection_failed }}warn{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service="fixture-broker/kafka"}`
+	// This exact metadata retention continuation has no separate severity prefix.
+	stage.regex {
+		expression = `^(?P<routine_metadata_retention>retention \([0-9]+\) \(kafka\.raft\.KafkaMetadataLog\))$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .routine_metadata_retention }}info{{ else }}{{ .Value }}{{ end }}`
+	}
+}
+
+stage.match {
+	selector = `{service=~"fixture-models/ollama"}`
+	// Native llama-server progress has no severity prefix. Keep it scoped and
+	// recognize known functions; unfamiliar output is still visible as unknown.
+	stage.regex {
+		expression = `^(?P<llama_progress>(print_info|llama_model_loader|load_hparams|llama_context|llama_kv_cache|clip_model_loader|clip_ctx|load_tensors|sched_reserve|common_init_result|common_params_fit_impl|common_memory_breakdown_print|common_fit_params|common_speculative_init|common_init_from_params|common_params_print_info|reserve_compute_meta|system_info|device_info|log_info|handle_qwen[0-9a-z_]+|init|warmup|load|compat tensor transform): .+|slot +[a-z_]+: id +[0-9]+ \| task -?[0-9]+ \| .+|srv +[a-z_]+: .+|encoding image slice\.\.\.|image slice encoded in [0-9]+ ms|decoding image batch [0-9]+/[0-9]+, n_tokens_batch = [0-9]+|\.{3,})$`
+	}
+
+	stage.regex {
+		expression = `(?i)^(?P<llama_failure>[^\n]*(fatal|panic|out of memory|failed to |unable to |cannot |error:)[^\n]*)$`
+	}
+
+	stage.regex {
+		expression = `(?i)^(?P<llama_warning>[^\n]*(warning:|probably a bug|not supported)[^\n]*)$`
+	}
+
+	stage.regex {
+		expression = `^srv +log_server_[a-z_]*: done request: [A-Z]+ [^ ]+ [^ ]+ (?P<llama_http_status>[1-5][0-9]{2})$`
+	}
+
+	stage.template {
+		source   = "text_level"
+		template = `{{ if .llama_failure }}error{{ else if .llama_warning }}warn{{ else if .llama_http_status }}{{ if ge .llama_http_status "500" }}error{{ else if ge .llama_http_status "400" }}warn{{ else }}debug{{ end }}{{ else if .llama_progress }}debug{{ else }}{{ .Value }}{{ end }}`
 	}
 }
