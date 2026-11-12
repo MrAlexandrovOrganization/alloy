@@ -30,6 +30,11 @@ paths, input checksums, committed revisions and ownership, and retains previous
 inputs before activation. No source code is copied outside the Git/CI workflow.
 `make deploy` then validates the generated Alloy file, waits for receivers,
 installs host-selected file providers, recreates the collector and runs smoke.
+Set `OBSERVABILITY_INSTALL_ROOT` in the private `.env` when central providers
+read a different directory from the collector's `MONITORING_DATA_DIR`. For example,
+a collector can keep its targets in `~/.monitoring-wsl` while installing the
+central Grafana providers in `~/.monitoring`. The default remains
+`MONITORING_DATA_DIR`; existing collector mounts and state are preserved.
 
 The generated runtime config is `.generated/observability/config.alloy`; Compose
 mounts the `ALLOY_CONFIG_FILE` selected by Make. Persistent volumes, component IDs
