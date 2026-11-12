@@ -8,6 +8,9 @@ check: observability-check
 
 OBSERVABILITY_OUTPUT ?= $(CURDIR)/.generated/observability
 OBSERVABILITY_HOST ?= $(ALLOY_HOST)
+OBSERVABILITY_GRAFANA_ROOT ?= $(MONITORING_DATA_DIR)
+OBSERVABILITY_GRAFANA_CONTAINER ?= grafana
+OBSERVABILITY_INSTALL_ARGS = --monitoring-root "$(MONITORING_DATA_DIR)" --grafana-root "$(OBSERVABILITY_GRAFANA_ROOT)" --host "$(OBSERVABILITY_HOST)" --grafana-container "$(OBSERVABILITY_GRAFANA_CONTAINER)"
 .PHONY: observability-sync observability-generate observability-generated-check observability-install
 # Updating inputs is explicit. Normal checks/builds never read sibling checkouts.
 observability-sync:
@@ -17,8 +20,13 @@ observability-generate:
 	python3 scripts/observability.py generate --output "$(OBSERVABILITY_OUTPUT)"
 observability-generated-check:
 	python3 scripts/observability.py generated-check --public
-observability-install: observability-generated-check observability-generate
-	python3 scripts/observability.py install --output "$(OBSERVABILITY_OUTPUT)" --monitoring-root "$(MONITORING_DATA_DIR)" --host "$(OBSERVABILITY_HOST)"
+observability-install: observability-generated-check observability-generate observability-providers-check
+	python3 scripts/observability.py install --output "$(OBSERVABILITY_OUTPUT)" $(OBSERVABILITY_INSTALL_ARGS)
+.PHONY: observability-providers-check observability-providers-verify
+observability-providers-check:
+	python3 scripts/observability.py providers-check $(OBSERVABILITY_INSTALL_ARGS)
+observability-providers-verify:
+	python3 scripts/observability.py providers-verify $(OBSERVABILITY_INSTALL_ARGS)
 check config-check: observability-generated-check
 format: observability-public-generate
 # Install only assets selected by the private deployment configuration.

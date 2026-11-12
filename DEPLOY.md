@@ -12,7 +12,7 @@ Configure the repository's `DEPLOY_ENABLED` variable and these secrets:
   Each node has `alias`, `host`, `port`, `user`, `key_alias`. Only declared targets
   are contacted; aliases and addresses never appear in public job output.
 - `OBSERVABILITY_BUNDLE_1`, `_2`, `_3`: consecutive base64 chunks of a private gzip
-  tar bundle (at most 30,000 characters each).
+  tar bundle (less than 48,000 characters each).
 - `OBSERVABILITY_BUNDLE_SHA256`: SHA-256 of the decoded gzip bytes.
 
 A private input directory contains `services.lock.json`, `packages/` and
@@ -30,6 +30,32 @@ paths, input checksums, committed revisions and ownership, and retains previous
 inputs before activation. No source code is copied outside the Git/CI workflow.
 `make deploy` then validates the generated Alloy file, waits for receivers,
 installs host-selected file providers, recreates the collector and runs smoke.
+
+`MONITORING_DATA_DIR` is the collector's local directory, including its file-SD
+targets. If Grafana reads a different directory, set `OBSERVABILITY_GRAFANA_ROOT`
+in the central host's private `.env`. Only `grafana-dashboards` and
+`grafana-datasource-templates` use that root; scrape targets keep their existing
+directory. The default is `MONITORING_DATA_DIR`. For example, a collector can
+retain `~/.monitoring-wsl` while Grafana providers go into `~/.monitoring`.
+Set `OBSERVABILITY_GRAFANA_CONTAINER` if the central container is not `grafana`.
+The directory must match that container's `/var/lib/grafana/dashboards` bind mount.
+
+Before installation, `make observability-providers-check` rejects a mismatched
+Grafana mount. Installation locks both roots, checks every existing managed file
+before mutation, and rolls back both destinations if a write fails. The registry
+stays in `MONITORING_DATA_DIR` and records the Grafana root. Reconcile saved
+Grafana edits into their owning packages before the initial migration; unknown
+edits still block deployment. Inactive files in the old directory are retained
+for rollback and are no longer updated.
+
+After rollout, `make observability-providers-verify` reads each delivered dashboard
+through the running Grafana container and compares it with the pinned package.
+This check is part of `make deploy`, so a successful SSH receipt also confirms
+that Grafana can read the delivered JSON. UI provisioning and datasource/query
+health should still be checked when changing a dashboard. Updating a service's
+package remains explicit: export a committed package, sync it into the private
+catalog, update the bundle secrets, then run the collector CI/CD workflow.
+No dashboard files need to be copied or applied on the host manually.
 
 The generated runtime config is `.generated/observability/config.alloy`; Compose
 mounts the `ALLOY_CONFIG_FILE` selected by Make. Persistent volumes, component IDs

@@ -43,6 +43,97 @@ class Packages(unittest.TestCase):
     def pin(self):
         assembly.sync(self.collector, self.source)
 
+    def add_dashboard(self):
+        self.doc['assets'].append({'kind': 'dashboards', 'file': 'monitoring/dashboard.json', 'destination': 'fixture.json', 'location': 'central'})
+        (self.source / 'monitoring/dashboard.json').write_text('{"uid":"fixture","panels":[]}\n')
+        self.write_manifest()
+
+    def test_grafana_root_keeps_local_scrape_targets_and_can_update_providers(self):
+        self.add_dashboard()
+        self.pin()
+        live, grafana = self.root / 'local', self.root / 'central'
+        assembly.install(self.collector, None, live, 'node-a', grafana)
+        self.assertTrue((live / 'prometheus-targets/fixture.json').exists())
+        self.assertFalse((grafana / 'prometheus-targets').exists())
+        self.assertFalse((live / 'grafana-dashboards').exists())
+        dashboard = grafana / 'grafana-dashboards/fixture.json'
+        (self.source / 'monitoring/dashboard.json').write_text('{"uid":"fixture","panels":[],"title":"Updated"}\n')
+        self.pin()
+        assembly.install(self.collector, None, live, 'node-a', grafana)
+        self.assertEqual(json.loads(dashboard.read_text())['title'], 'Updated')
+        ledger = json.loads((live / 'observability-managed.json').read_text())
+        self.assertEqual(ledger['grafana_root'], str(grafana.resolve()))
+
+    def test_edited_grafana_provider_blocks_all_roots_before_mutation(self):
+        self.add_dashboard()
+        self.pin()
+        live, grafana = self.root / 'local', self.root / 'central'
+        assembly.install(self.collector, None, live, 'node-a', grafana)
+        target = live / 'prometheus-targets/fixture.json'
+        before = target.read_bytes()
+        dashboard = grafana / 'grafana-dashboards/fixture.json'
+        dashboard.write_text('private edited dashboard')
+        (self.source / 'monitoring/targets.json').write_text('[{"targets":["new:9090"]}]')
+        self.pin()
+        with self.assertRaisesRegex(ValueError, 'locally edited'):
+            assembly.install(self.collector, None, live, 'node-a', grafana)
+        self.assertEqual(target.read_bytes(), before)
+        self.assertEqual(dashboard.read_text(), 'private edited dashboard')
+
+    def test_migration_from_legacy_registry_keeps_inactive_old_files(self):
+        self.add_dashboard()
+        self.pin()
+        live, grafana = self.root / 'local', self.root / 'central'
+        assembly.install(self.collector, None, live, 'node-a')
+        ledger = live / 'observability-managed.json'
+        legacy = json.loads(ledger.read_text())
+        legacy.pop('grafana_root')
+        ledger.write_text(json.dumps(legacy))
+        old = live / 'grafana-dashboards/fixture.json'
+        before = old.read_bytes()
+        assembly.install(self.collector, None, live, 'node-a', grafana)
+        self.assertEqual(old.read_bytes(), before)
+        self.assertEqual((grafana / 'grafana-dashboards/fixture.json').read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, 'root changed'):
+            assembly.install(self.collector, None, live, 'node-a')
+
+    def test_split_root_install_rolls_back_both_destinations(self):
+        self.add_dashboard()
+        self.pin()
+        live, grafana = self.root / 'local', self.root / 'central'
+        assembly.install(self.collector, None, live, 'node-a', grafana)
+        target = live / 'prometheus-targets/fixture.json'
+        dashboard = grafana / 'grafana-dashboards/fixture.json'
+        ledger = live / 'observability-managed.json'
+        before = [p.read_bytes() for p in [target, dashboard, ledger]]
+        (self.source / 'monitoring/targets.json').write_text('[{"targets":["new:9090"]}]')
+        (self.source / 'monitoring/dashboard.json').write_text('{"uid":"fixture","panels":[],"title":"Updated"}')
+        self.pin()
+        real = assembly.atomic
+        def failing(path, data):
+            if path.name == ledger.name and data != before[2]:
+                raise OSError('synthetic disk failure')
+            real(path, data)
+        with patch.object(assembly, 'atomic', side_effect=failing), self.assertRaises(OSError):
+            assembly.install(self.collector, None, live, 'node-a', grafana)
+        self.assertEqual([p.read_bytes() for p in [target, dashboard, ledger]], before)
+
+    def test_provider_verification_rejects_wrong_mount_and_stale_container_content(self):
+        self.add_dashboard()
+        self.pin()
+        grafana = self.root / 'central'
+        mounted = {'Destination': '/var/lib/grafana/dashboards', 'Source': str(grafana / 'grafana-dashboards')}
+        def inspect(args, **kwargs):
+            body = json.dumps([mounted]).encode() if 'inspect' in args else b'{"uid":"fixture","panels":[]}\n'
+            return subprocess.CompletedProcess(args, 0, body)
+        with patch.object(assembly.subprocess, 'run', side_effect=inspect):
+            self.assertEqual(assembly.verify_grafana(self.collector, grafana, 'node-a', content=True), 1)
+            with self.assertRaisesRegex(ValueError, 'mount differs'):
+                assembly.verify_grafana(self.collector, self.root / 'wrong', 'node-a')
+        with patch.object(assembly.subprocess, 'run', side_effect=[inspect(['inspect']), subprocess.CompletedProcess([], 0, b'stale')]):
+            with self.assertRaisesRegex(ValueError, 'different from the pinned package'):
+                assembly.verify_grafana(self.collector, grafana, 'node-a', content=True)
+
     def test_archive_is_deterministic_and_self_contained(self):
         a, b = self.root / 'a.tar', self.root / 'b.tar'
         pin = contract.export(self.source, a)

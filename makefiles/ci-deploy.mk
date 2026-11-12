@@ -9,6 +9,7 @@ deploy:
 	python3 scripts/deploy-ready.py
 	$(MAKE) recreate
 	$(MAKE) smoke
+	$(MAKE) observability-providers-verify
 
 .PHONY: install-deploy-receiver
 install-deploy-receiver:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import fcntl
 import gzip
 import io
@@ -11,7 +12,9 @@ import os
 import sys
 import json
 import re
+import shlex
 import shutil
+import subprocess
 import tarfile
 import tempfile
 from pathlib import Path
@@ -309,7 +312,37 @@ def generate(collector, output, check=False, public=False):
     return files
 
 
-def install(collector, output, root, host):
+GRAFANA_DIRECTORIES = {"grafana-dashboards", "grafana-datasource-templates"}
+
+
+def verify_grafana(collector, root, host, container="grafana", content=False):
+    files = render(collector)
+    prefix = f"hosts/{host}/grafana-dashboards/"
+    dashboards = {name[len(prefix):]: data for name, data in files.items() if name.startswith(prefix)}
+    if not dashboards:
+        return 0
+    docker = shlex.split(os.environ.get("DOCKER", "docker"))
+    mount_path = "/var/lib/grafana/dashboards"
+    result = subprocess.run(
+        [*docker, "inspect", "--format", "{{json .Mounts}}", container],
+        check=True, capture_output=True, timeout=30,
+    )
+    mounts = [m for m in json.loads(result.stdout) if m["Destination"] == mount_path]
+    expected = Path(root).expanduser().resolve() / "grafana-dashboards"
+    if len(mounts) != 1 or Path(mounts[0]["Source"]).resolve() != expected:
+        raise ValueError("Grafana dashboard mount differs from the provider installation directory")
+    if content:
+        for name, data in dashboards.items():
+            result = subprocess.run(
+                [*docker, "exec", container, "cat", str(Path(mount_path) / relative(name))],
+                check=True, capture_output=True, timeout=30,
+            )
+            if result.stdout != data:
+                raise ValueError("Grafana reads a dashboard different from the pinned package: " + name)
+    return len(dashboards)
+
+
+def install(collector, output, root, host, grafana_root=None):
     collector = Path(collector).resolve()
     if (inputs_root(collector) / "deployment.json").exists() and host not in deployment(collector)["hosts"]:
         raise ValueError("Refusing to install for an inactive host")
@@ -318,13 +351,16 @@ def install(collector, output, root, host):
     if host not in deployment(collector)["hosts"]:
         raise ValueError("Refusing to install for an inactive host")
     root = Path(root).expanduser().resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    with (root / ".observability-install.lock").open("a") as stream:
-        fcntl.flock(stream, fcntl.LOCK_EX)
-        return install_locked(Path(collector).resolve(), root, host)
+    grafana_root = Path(grafana_root or root).expanduser().resolve()
+    with ExitStack() as locks:
+        for directory in sorted({root, grafana_root}):
+            directory.mkdir(parents=True, exist_ok=True)
+            stream = locks.enter_context((directory / ".observability-install.lock").open("a"))
+            fcntl.flock(stream, fcntl.LOCK_EX)
+        return install_locked(Path(collector).resolve(), root, host, grafana_root)
 
 
-def install_locked(collector, root, host):
+def install_locked(collector, root, host, grafana_root):
     files = render(collector)
     prefix = f"hosts/{host}/"
     selected = {
@@ -343,11 +379,17 @@ def install_locked(collector, root, host):
     )
     if previous.get("schema") != SCHEMA or previous.get("host") != host:
         raise ValueError("Managed registry belongs to another host or schema")
+    if previous.get("grafana_root", str(grafana_root)) != str(grafana_root):
+        raise ValueError("Grafana provider root changed; reconcile the previous installation first")
+
+    def asset_root(name):
+        return grafana_root if relative(name).parts[0] in GRAFANA_DIRECTORIES else root
 
     def destination(name):
-        path = root / relative(name)
+        base = asset_root(name)
+        path = base / relative(name)
         current = path
-        while current != root:
+        while current != base:
             if current.is_symlink():
                 raise ValueError("Refusing a symlinked observability destination")
             current = current.parent
@@ -378,14 +420,15 @@ def install_locked(collector, root, host):
         if old is not None and digest(old) not in accepted:
             raise ValueError("Unmanaged or locally edited observability file: " + name)
     old_ledger = ledger.read_bytes() if ledger.exists() else None
-    owner = (root.stat().st_uid, root.stat().st_gid)
     try:
         for name, data in selected.items():
-            path = root / name
+            base = asset_root(name)
+            owner = (base.stat().st_uid, base.stat().st_gid)
+            path = destination(name)
             # Shared bind-mounted assets must remain readable under umask 077.
             parent = path.parent
             missing = []
-            while parent != root and not parent.exists():
+            while parent != base and not parent.exists():
                 missing.append(parent)
                 parent = parent.parent
             for parent in reversed(missing):
@@ -393,19 +436,20 @@ def install_locked(collector, root, host):
                 parent.chmod(0o755)
                 os.chown(parent, *owner)
             parent = path.parent
-            while parent != root:
+            while parent != base:
                 parent.chmod(0o755)
                 parent = parent.parent
             atomic(path, data)
             os.chown(path, *owner)
         for name in obsolete:
-            (root / name).unlink(missing_ok=True)
+            destination(name).unlink(missing_ok=True)
         atomic(
             ledger,
             encoded(
                 {
                     "schema": SCHEMA,
                     "host": host,
+                    "grafana_root": str(grafana_root),
                     "files": {name: digest(data) for name, data in selected.items()},
                 }
             ),
@@ -413,10 +457,10 @@ def install_locked(collector, root, host):
     except BaseException:
         for name, data in backup.items():
             if data is None:
-                (root / name).unlink(missing_ok=True)
+                destination(name).unlink(missing_ok=True)
             else:
-                atomic(root / name, data)
-                os.chown(root / name, *backup_owners[name])
+                atomic(destination(name), data)
+                os.chown(destination(name), *backup_owners[name])
         if old_ledger is None:
             ledger.unlink(missing_ok=True)
         else:
@@ -521,6 +565,8 @@ def main():
             "generated-check",
             "release-check",
             "install",
+            "providers-check",
+            "providers-verify",
             "receive",
             "bundle",
         ),
@@ -534,6 +580,8 @@ def main():
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--monitoring-root", type=Path)
+    parser.add_argument("--grafana-root", type=Path)
+    parser.add_argument("--grafana-container", default="grafana")
     parser.add_argument("--host")
     parser.add_argument(
         "--public",
@@ -574,14 +622,18 @@ def main():
         print("All service inputs reference committed resources")
     else:
         output = args.output or args.root / ".generated/observability"
-        if args.command == "install":
+        if args.command in {"install", "providers-check", "providers-verify"}:
             if not args.monitoring_root or not args.host:
                 parser.error("install requires --monitoring-root and --host")
-            print(
-                "Installed "
-                + str(install(args.root, output, args.monitoring_root, args.host))
-                + " managed observability assets"
-            )
+            if args.command == "install":
+                count = install(args.root, output, args.monitoring_root, args.host, args.grafana_root)
+                print("Installed " + str(count) + " managed observability assets")
+            else:
+                count = verify_grafana(
+                    args.root, args.grafana_root or args.monitoring_root, args.host,
+                    args.grafana_container, args.command == "providers-verify",
+                )
+                print("Verified " + str(count) + " Grafana dashboard providers")
         else:
             generate(args.root, output, args.command == "generated-check", args.public)
             print(
