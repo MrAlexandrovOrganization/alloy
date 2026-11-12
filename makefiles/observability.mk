@@ -8,7 +8,6 @@ check: observability-check
 
 OBSERVABILITY_OUTPUT ?= $(CURDIR)/.generated/observability
 OBSERVABILITY_HOST ?= $(ALLOY_HOST)
-OBSERVABILITY_INSTALL_ROOT ?= $(MONITORING_DATA_DIR)
 .PHONY: observability-sync observability-generate observability-generated-check observability-install
 # Updating inputs is explicit. Normal checks/builds never read sibling checkouts.
 observability-sync:
@@ -19,7 +18,7 @@ observability-generate:
 observability-generated-check:
 	python3 scripts/observability.py generated-check --public
 observability-install: observability-generated-check observability-generate
-	python3 scripts/observability.py install --output "$(OBSERVABILITY_OUTPUT)" --monitoring-root "$(OBSERVABILITY_INSTALL_ROOT)" --host "$(OBSERVABILITY_HOST)"
+	python3 scripts/observability.py install --output "$(OBSERVABILITY_OUTPUT)" --monitoring-root "$(MONITORING_DATA_DIR)" --host "$(OBSERVABILITY_HOST)"
 check config-check: observability-generated-check
 format: observability-public-generate
 # Install only assets selected by the private deployment configuration.
